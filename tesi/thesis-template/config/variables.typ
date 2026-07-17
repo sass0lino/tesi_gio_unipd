@@ -1,0 +1,14 @@
+#let myLang = "it" // it/en only
+#let myName = "Giovanni Ponso"
+#let myMatricola = "2000558"
+#let myTitle = "Servizio event-driven per l'estrazione e la sintesi di KPI aziendali tramite semantic layer e LLM"
+#let myProf = "Prof. Federico Corò"
+#let myCompany = "Datasoil S.r.l."
+#let myLocation = "Padova"
+#let myAY = "2025-2026"
+#let myTime = "Settembre 2026"
+#let myTutor = "Pietro De Caro"
+#let myUni = "Università degli studi di Padova"
+#let myDepartment = [Dipartimento di Matematica 'Tullio Levi-Civita']
+#let myFaculty = "Corso di Laurea in Informatica"
+#let myDegree = "Tesi di laurea triennale"
