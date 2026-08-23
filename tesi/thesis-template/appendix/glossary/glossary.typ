@@ -8,4 +8,4 @@
  * Tutti i termini che iniziano con la lettera maiuscola saranno mostrati per primi (B > a), per questo consiglio di mettere tutte le key in minuscolo.
  * Se vuoi modificare il modo in cui vengono ordinati i termini vedi https://github.com/typst-community/glossarium/issues/107#issuecomment-2692722556
 */
-#print-glossary(glossary-terms, deduplicate-back-references: true)
+#print-glossary(glossary-terms, show-all: true, deduplicate-back-references: true)

@@ -30,6 +30,8 @@
   set text(font: "New Computer Modern", lang: myLang)
   set heading(numbering: myNumbering)
   show raw: set text(font: "DejaVu Sans Mono", size: 10pt)
+  // corpo ridotto per i blocchi di codice, così le righe fino a ~65 colonne non vanno a capo
+  show raw.where(block: true): set text(size: 7.5pt)
   set par(spacing: 0.55em)
   show heading: set block(above: 2em, below: 1.4em)
   show heading.where(level: 1): it => {

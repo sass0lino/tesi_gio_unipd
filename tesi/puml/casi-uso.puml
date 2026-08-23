@@ -1,0 +1,15 @@
+@startuml casi-uso
+left to right direction
+skinparam dpi 300
+
+actor "Piattaforma SaaS" as piattaforma
+
+rectangle "Servizio di contesto" {
+  usecase "UC1: Consultazione\ndella sintesi" as UC1
+  usecase "UC2: Richiesta di produzione\ndella sintesi" as UC2
+}
+
+piattaforma -- UC1
+piattaforma -- UC2
+
+@enduml

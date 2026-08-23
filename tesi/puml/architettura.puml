@@ -1,0 +1,50 @@
+@startuml architettura
+skinparam dpi 300
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam ArrowColor #444444
+skinparam rectangleBorderColor #444444
+skinparam componentBorderColor #444444
+skinparam databaseBorderColor #444444
+skinparam queueBorderColor #444444
+skinparam nodesep 25
+skinparam ranksep 35
+
+actor "Operatore" as operatore
+
+rectangle "Piattaforma SaaS" as piattaforma
+
+queue "Topic SNS\nentità modificata" as sns
+queue "Coda\ninvalidazione" as qinv
+queue "Coda\nproduzione" as qprod
+
+rectangle "Servizio di contesto" as servizio {
+  component "Invalidazione" as inv
+  component "Produzione" as prod
+  component "Consultazione" as cons
+}
+
+component "Cube\nsemantic layer" as cube
+database "PostgreSQL" as postgres
+component "Modello\nlinguistico" as llm
+database "MongoDB\nconfigurazioni e riepiloghi" as mongo
+
+operatore -down-> piattaforma
+
+piattaforma -down-> sns : modifica
+piattaforma -down-> qprod : produzione
+piattaforma -down-> cons : consultazione (HTTP)
+sns -down-> qinv
+
+qinv -down-> inv
+qprod -down-> prod
+
+prod -right-> cube : KPI
+cube -down-> postgres
+prod -left-> llm : testo
+
+inv -down-> mongo : cancella
+prod -down-> mongo : interroga e salva
+cons -down-> mongo : legge
+
+@enduml

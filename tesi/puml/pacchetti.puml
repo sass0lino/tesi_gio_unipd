@@ -1,0 +1,28 @@
+@startuml pacchetti
+skinparam dpi 300
+skinparam shadowing false
+skinparam ArrowColor #444444
+skinparam packageBorderColor #444444
+skinparam linetype ortho
+skinparam ranksep 50
+skinparam nodesep 30
+
+package "cmd/context-service" as cmd
+
+package "internal" {
+  package "config" as config
+  package "clients\n(mongoclient, cube,\nopenaiclient, awsclient)" as clients
+  package "summary" as summary
+  package "kpi" as kpi
+  package "store" as store
+  package "tenant" as tenant
+}
+
+cmd -down-> config
+cmd -down-> clients
+cmd -down-> summary
+cmd -down-> kpi
+cmd -down-> store
+cmd -down-> tenant
+
+@enduml

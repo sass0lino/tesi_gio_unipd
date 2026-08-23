@@ -1,0 +1,58 @@
+@startuml summary-interfacce
+skinparam dpi 300
+skinparam shadowing false
+skinparam ArrowColor #444444
+skinparam classBorderColor #444444
+skinparam packageBorderColor #444444
+skinparam classAttributeIconSize 0
+skinparam ranksep 45
+skinparam nodesep 40
+hide empty members
+
+package "internal/summary" {
+  class Service {
+    -store: Store
+    -llm: LLM
+    -kpi: Source
+    -tenants: Tenants
+    +Produce(ctx, tenantID, geocID, trigger)
+  }
+  interface Source {
+    +Blocks(ctx, tenantID, geocID,\ntrigger, timezone)
+  }
+  interface LLM {
+    +Complete(ctx, systemPrompt,\nuserMessage)
+  }
+  interface Store {
+    +Get(ctx, tenantID, geocID, trigger)
+    +Save(ctx, tenantID, geocID,\ntrigger, summary)
+  }
+  interface Tenants {
+    +Get(ctx, tenantID)
+  }
+}
+
+package "internal/kpi" {
+  class "Service" as KpiService
+}
+package "internal/clients/\nopenaiclient" {
+  class "Client" as OpenAIClient
+}
+package "internal/store" {
+  class "Store" as MongoStore
+}
+package "internal/tenant" {
+  class "Reader" as TenantReader
+}
+
+Service o-down- Source
+Service o-down- LLM
+Service o-down- Store
+Service o-down- Tenants
+
+KpiService .up.|> Source
+OpenAIClient .up.|> LLM
+MongoStore .up.|> Store
+TenantReader .up.|> Tenants
+
+@enduml

@@ -1,0 +1,15 @@
+@startuml flusso-operatore
+skinparam dpi 300
+
+start
+:l'operatore apre la scheda dell'entità;
+if (esiste una sintesi\ncorrispondente allo stato attuale?) then (sì)
+  :la sintesi viene mostrata;
+else (no)
+  :viene proposto il comando\nper richiederne la produzione;
+  :l'operatore lo attiva;
+  :la sintesi viene prodotta e mostrata;
+endif
+stop
+
+@enduml

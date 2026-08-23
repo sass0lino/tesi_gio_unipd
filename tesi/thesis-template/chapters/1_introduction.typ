@@ -24,9 +24,11 @@ Il progetto di stage nasce dall'esigenza, individuata nel piano di lavoro, di ef
 
 In concreto, si tratta di sviluppare un servizio che, all'apertura della scheda di un asset (o di un'ispezione o di un ticket), generi automaticamente un *riepilogo testuale in linguaggio naturale* dello stato dell'oggetto, sfruttando i dati aziendali per garantire l'attendibilità del contenuto e un modello linguistico (LLM) per la sua esposizione.
 
-Il servizio sviluppato è di tipo _event-driven_: reagisce agli eventi pubblicati dalla piattaforma su una coda (ad esempio il completamento di un'ispezione), recupera i KPI dell'entità interessata, ne affida la sintesi all'LLM e rende disponibile il riepilogo generato.
+Il servizio è il solo oggetto dello stage. L'interfaccia con cui l'operatore visualizza il riepilogo e ne richiede la produzione appartiene alla piattaforma ed è competenza del team aziendale: nel documento viene descritta soltanto per dare senso al comportamento del servizio, che è stato progettato e realizzato per sostenerla.
 
 Lo stage si è svolto in modalità full-time per un totale di 320 ore, sotto la supervisione del tutor aziendale Pietro De Caro. Gli obiettivi erano fissati dal piano di lavoro concordato con l'azienda, che mi ha lasciato però ampia autonomia sul _come_ raggiungerli: per ciascun obiettivo ho valutato approcci alternativi, sviluppato prototipi per verificarne la fattibilità e consolidato le scelte attraverso frequenti momenti di confronto con il tutor.
+
+La forma che il servizio ha infine assunto non era stabilita in partenza: è il risultato di scelte maturate lungo tutto il periodo, che la sezione seguente ripercorre insieme ai problemi da cui sono nate.
 
 === Principali problematiche e relative soluzioni
 
@@ -34,15 +36,15 @@ Le principali problematiche riscontrate durante la realizzazione del progetto ri
 
 *1. Recupero deterministico dei dati per l'LLM*
 
-_Descrizione:_ gli LLM eccellono nella produzione di testo fluente, ma se incaricati anche del recupero o del calcolo dei dati tendono a produrre _allucinazioni_, ovvero affermazioni plausibili ma non supportate dai dati reali. Gli approcci più diffusi per interrogare dati aziendali tramite LLM — il RAG e le tecniche Text-to-SQL — si sono rivelati, dallo studio preliminare, inadatti ai dati strutturati: in un contesto in cui il riepilogo supporta decisioni operative, un valore inventato non è accettabile.
+_Descrizione:_ gli LLM eccellono nella produzione di testo fluente, ma se incaricati anche del recupero o del calcolo dei dati tendono a produrre _allucinazioni_, ovvero affermazioni plausibili ma non supportate dai dati reali. Gli approcci più diffusi per interrogare dati aziendali tramite LLM, ovvero il RAG e le tecniche Text-to-SQL, si sono rivelati dallo studio preliminare inadatti ai dati strutturati: in un contesto in cui il riepilogo supporta decisioni operative, un valore inventato non è accettabile.
 
 _Soluzione:_ è stato introdotto un _semantic layer_ (Cube), uno strato intermedio che centralizza la definizione delle metriche e fornisce KPI "certificati", recuperati in modo completamente deterministico. All'LLM viene affidata soltanto l'esposizione in linguaggio naturale di valori già calcolati, con istruzioni che ne vincolano il comportamento ai soli dati forniti.
 
 *2. Interfacciamento tra il semantic layer e il database aziendale*
 
-_Descrizione:_ la piattaforma conserva i dati su MongoDB, un database NoSQL, mentre Cube opera su sorgenti relazionali. L'azienda disponeva di una soluzione temporanea, applicata a un solo cliente: il travaso dei dati in un campo `jsonb` su PostgreSQL, poi "srotolato" in una vista materializzata. Nel tentativo di rendere l'architettura più generale ho sperimentato l'interrogazione diretta del campo `jsonb` grezzo da parte di Cube, ottenendo però tempi di risposta proibitivi e configurazioni SQL molto difficili da mantenere; è stata valutata anche l'esportazione dei dati in formato Parquet, tecnicamente percorribile ma onerosa. Questa problematica ha assorbito una parte significativa del tempo di stage.
+_Descrizione:_ la piattaforma conserva i dati su MongoDB, un database NoSQL, mentre Cube opera su sorgenti relazionali. L'azienda disponeva di una soluzione temporanea, applicata a un solo cliente: il travaso dei dati in un campo `jsonb` su PostgreSQL, poi "srotolato" in una vista materializzata. Nel tentativo di rendere l'architettura più generale ho sperimentato l'interrogazione diretta del campo `jsonb` grezzo da parte di Cube, ottenendo però tempi di risposta proibitivi e configurazioni SQL molto difficili da mantenere; ho poi sperimentato con esito positivo l'esportazione dei dati in formato Parquet, che però per reggersi nel tempo avrebbe richiesto un lavoro di automazione a carico dell'azienda. Questa problematica ha assorbito una parte significativa del tempo di stage.
 
-_Soluzione:_ in accordo con il tutor aziendale, l'ottimizzazione dell'interfacciamento — questione prettamente infrastrutturale — è stata messa in pausa per non bloccare l'avanzamento del progetto: lo sviluppo è proseguito sull'ambiente PostgreSQL già pronto e configurato, mantenendo l'architettura aperta a una futura generalizzazione.
+_Soluzione:_ in accordo con il tutor aziendale, l'ottimizzazione dell'interfacciamento è stata messa in pausa per non bloccare l'avanzamento del progetto, trattandosi di una questione prettamente infrastrutturale. Lo sviluppo è proseguito sull'ambiente PostgreSQL già pronto e configurato, mantenendo l'architettura aperta a una futura generalizzazione.
 
 *3. Gestione della multitenancy*
 
@@ -54,19 +56,62 @@ _Soluzione:_ per i data model è stata utilizzata la direttiva `extends` di Cube
 
 _Descrizione:_ una volta risolta la questione del recupero, restava da definire quali KPI fossero utili al riepilogo e in quale forma esporli: se sviluppare vere e proprie funzioni di analisi del dato (ad esempio il calcolo di trend), o se arricchire i KPI con dati qualitativi recuperati direttamente dal database.
 
-_Soluzione:_ confrontandomi con il tutor aziendale ho scelto di mantenere il sistema semplice: KPI aggregati "grezzi", affidando all'LLM la loro descrizione in linguaggio naturale guidata da istruzioni specifiche per ciascun blocco di dati. L'arricchimento con dati qualitativi, pur esplorato con risultati interessanti, è stato accantonato per rimanere strettamente sui dati aggregati.
+_Soluzione:_ confrontandomi con il tutor aziendale ho scelto di mantenere il sistema semplice: KPI aggregati "grezzi", affidando all'LLM la loro descrizione in linguaggio naturale guidata da istruzioni specifiche per ciascun blocco di dati. Il riepilogo accosta così due tipi di contenuto: i KPI aggregati e alcune informazioni puntuali sulle singole occorrenze, come la descrizione dei ticket aperti e dell'intervento svolto su quelli chiusi di recente. Anche queste ultime passano però dal semantic layer: l'ipotesi di recuperarle direttamente dal database, scavalcandolo, è stata scartata per non aprire una seconda via di accesso ai dati con garanzie diverse dalla prima.
+
+*5. Conservazione e aggiornamento del riepilogo*
+
+_Descrizione:_ produrre un riepilogo richiede una chiamata al modello linguistico, quindi comporta un costo e alcuni secondi di attesa. Da qui la domanda su cosa farne una volta prodotto. Rigenerarlo a ogni apertura di scheda garantisce che sia sempre aggiornato, ma fa pagare quel costo anche all'operatore che apre la scheda per altri motivi. Conservarlo rende invece immediate le consultazioni successive, esponendo però al rischio opposto: quando i dati dell'entità cambiano, per esempio all'apertura di un nuovo ticket o al completamento di un'ispezione, il testo conservato smette di corrispondere alla realtà.
+
+_Soluzione:_ il riepilogo viene conservato, e utilizzo due meccanismi per evitare ri-generazioni inutili o versioni non valide del riepilogo.
+
+Il primo separa la consultazione dalla produzione. La consultazione si limita a leggere: restituisce il riepilogo se esiste, altrimenti risponde che non è disponibile. Ricevendo questa seconda risposta la piattaforma può proporre all'operatore di richiedere la produzione, che resta l'unico modo per avviarla.
+
+Il secondo tiene il riepilogo allineato ai dati. Ho valutato due strategie prima di scegliere: confrontare la data del riepilogo con quella dell'ultima modifica dell'entità, oppure assegnare al riepilogo una scadenza a tempo. Entrambe richiedevano un controllo periodico e lasciavano una finestra di tempo in cui il testo mostrato poteva essere già superato. La soluzione adottata parte invece da un meccanismo che la piattaforma aziendale possiede già, ovvero l'evento che segnala la modifica (update) di un'entità aziendale (ticket, ecc...). Quando il servizio intercetta una modifica, elimina subito dal database il riepilogo dell'entità di riferimento, così alla richiesta successiva sarà necessario generare un nuovo riepilogo basato su dati aggiornati.
 
 === Pianificazione
 
-Il progetto è stato suddiviso in fasi, dedicate dapprima alla comprensione del dominio e alla scelta dell'architettura, e in seguito allo sviluppo vero e proprio:
+Il piano di lavoro concordato con l'azienda prevedeva otto settimane da quaranta ore ciascuna, per un totale di 320, così articolate:
 
-1. studio preliminare dell'approccio RAG e delle tecniche di interrogazione di dati tramite LLM;
-2. analisi degli approcci per i dati strutturati e scelta del semantic layer;
-3. sviluppo di prototipi con Cube per validarne la fattibilità: gestione della multitenancy, autenticazione JWT, interfacciamento con i dati;
-4. studio del linguaggio Go;
-5. sviluppo del servizio: integrazione con Cube e con le API dell'LLM, gestione dinamica delle query, caching dei riepiloghi;
-6. integrazione con la coda SQS e predisposizione dell'ambiente di sviluppo locale;
-7. #highlight[\[DA COMPLETARE A FINE STAGE: fase conclusiva, requisiti in rinegoziazione\]]
+1. introduzione al prodotto, alle tecnologie e ai processi aziendali; definizione degli obiettivi e avvio dell'analisi dei requisiti;
+2. completamento dell'analisi dei requisiti; studio e confronto delle tecnologie e degli approcci RAG disponibili;
+3. progettazione dell'applicativo e avvio della documentazione tecnica;
+4. e 5. sviluppo dell'applicativo, a partire dai moduli principali;
+6. completamento dello sviluppo funzionale ed esecuzione dei test unitari e di integrazione;
+7. verifica dell'applicativo su dati reali e revisione della documentazione;
+8. collaudo finale e rifinitura della documentazione.
+
+La ripartizione delle ore prevista era la seguente:
+
+#figure(
+  caption: [Ripartizione delle ore prevista dal piano di lavoro.],
+  table(
+    columns: (auto, 1fr),
+    align: (center + horizon, left + horizon),
+    fill: (x, y) => if y == 0 { luma(230) },
+    table.header([*Ore*], [*Attività*]),
+    [8], [Introduzione alla piattaforma proprietaria],
+    [8], [Introduzione agli strumenti utilizzati in azienda],
+    [32], [Analisi dei requisiti e stesura della relativa documentazione],
+    [32], [Studio e confronto delle tecnologie disponibili],
+    [40], [Progettazione dell'applicativo],
+    [120], [Sviluppo dell'applicativo],
+    [40], [Collaudo e test su dati reali],
+    [40], [Scrittura della documentazione],
+    [*320*], [*Totale*],
+  )
+)<tab:ripartizione-ore>
+
+=== Svolgimento effettivo
+
+Il lavoro ha seguito lo sviluppo previsto dal piano. Le differenze, concordate di volta in volta con il tutor aziendale, hanno riguardato soprattutto la distribuzione temporale di alcune fasi e l'esito dello studio preliminare.
+
+La fase di studio e confronto delle tecnologie, alla quale il piano destinava trentadue ore, ha prodotto il risultato più rilevante per l'intero progetto. Lo scopo dello stage era formulato attorno all'approccio RAG, ma l'analisi ne ha evidenziato l'inadeguatezza rispetto ai dati strutturati, ai quali insieme al tutor aziendale è stata data la priorità. La distinzione tra dati strutturati e non strutturati era già presente negli obiettivi, i primi in O01 e O02, i secondi in O03 e O04. È divenuta così anche una distinzione di approccio: il RAG è rimasto la strada prevista per i soli documenti non strutturati.
+
+A questa fase si è affiancata una questione che la pianificazione non contemplava: l'interfacciamento tra il semantic layer e il database aziendale. Trattandosi di un database non relazionale, il problema è di natura infrastrutturale e ha assorbito una porzione consistente del tempo.
+
+L'analisi dei requisiti, che il piano collocava nelle prime due settimane, si è distribuita lungo l'intero periodo. L'autonomia lasciatami sul modo di realizzare gli obiettivi ha fatto sì che diversi requisiti si precisassero mentre il lavoro procedeva, restando a lungo impliciti nei confronti con il tutor; la loro formalizzazione, avvenuta nella parte conclusiva dello stage, ha reso evidenti alcuni punti su cui il servizio non era ancora allineato a quanto concordato, il cui adeguamento ha occupato l'ultima fase dello sviluppo.
+
+Il collaudo previsto dalle settimane conclusive si è svolto nell'ambiente di sviluppo locale, sui dati reali dell'ambiente di _staging_ aziendale, e si è accompagnato alla scrittura dei test automatici; l'integrazione nell'infrastruttura di produzione, corrispondente all'obiettivo desiderabile D01, non è stata invece realizzata.
 
 === Obiettivi
 
@@ -79,19 +124,21 @@ Il piano di lavoro concordato con l'azienda definisce i seguenti obiettivi obbli
 
 A questi si aggiunge l'obiettivo desiderabile *D01*, l'integrazione nell'architettura e nel ciclo di rilascio della piattaforma.
 
-Il lavoro si è concentrato dapprima sul flusso relativo ai dati strutturati (O01 e O02), portandolo a un livello di completezza e solidità vicino all'integrazione in produzione. #highlight[\[DA COMPLETARE A FINE STAGE: esito di O03 e O04, requisiti in rinegoziazione\]]
+Il lavoro si è concentrato sul flusso relativo ai dati strutturati (O01 e O02), portandolo a un livello di completezza e solidità vicino all'integrazione in produzione. Nella seconda metà dello stage, in accordo con il tutor aziendale, si è scelto di consolidare tale flusso anziché avviare gli obiettivi O03 e O04: l'estensione ai documenti non strutturati avrebbe comportato lo studio e la realizzazione di un'infrastruttura di indicizzazione e recupero autonoma, con il rischio concreto di lasciare incompiuti entrambi i fronti. Gli obiettivi O03 e O04 sono stati pertanto analizzati sul piano teorico ma non realizzati, e sono ripresi tra gli sviluppi futuri nel @cap:conclusioni[Capitolo].
+
+Anche l'obiettivo desiderabile D01 non è stato raggiunto: nella settimana conclusiva l'azienda ha preferito destinare il tempo residuo a un affiancamento formativo con uno sviluppatore del team, ritenendolo più utile rispetto a un'attività il cui coordinamento con il ciclo di rilascio interno avrebbe ecceduto la durata dello stage.
 
 == Il prodotto finale
 
-Il servizio realizzato copre l'intero flusso previsto per i dati strutturati: riceve gli eventi dalla coda, recupera le interrogazioni configurate per il tenant, estrae i KPI tramite il semantic layer, genera il riepilogo con l'LLM e lo rende persistente, con la possibilità di servire le richieste successive dalla cache. Il servizio è progettato per essere configurabile per singolo cliente senza interventi sul codice ed è corredato di un ambiente di sviluppo locale che ne riproduce fedelmente l'infrastruttura di produzione.
+Il servizio realizzato copre l'intero flusso previsto per i dati strutturati e offre tre operazioni distinte. La *produzione* di un riepilogo, richiesta tramite coda, recupera le interrogazioni configurate per il tenant, ne estrae i KPI tramite il semantic layer, genera il testo con l'LLM e lo rende persistente. La *consultazione*, servita in modo sincrono, restituisce il riepilogo di un'entità oppure segnala che non è disponibile, senza produrne di nuovi. È questa seconda risposta a permettere alla piattaforma di proporre all'operatore la produzione. L'*invalidazione*, attivata dall'evento con cui la piattaforma segnala la modifica di un'entità: elimina i riepiloghi che non ne rispecchiano più lo stato, così che la richiesta successiva ne produca di aggiornati.
+
+Il servizio è configurabile per singolo cliente senza interventi sul codice, sia nelle interrogazioni che compongono il riepilogo, sia nella lingua e nel fuso orario con cui viene prodotto. È inoltre corredato di una suite di test automatici e di un ambiente di sviluppo locale che ne riproduce l'infrastruttura.
 
 Per un'analisi approfondita del risultato ottenuto si rimanda al @cap:conclusioni[Capitolo].
 
 == Organizzazione del testo
 
-Questa sezione esplicita l'organizzazione del documento, descrivendo brevemente il contenuto di ogni capitolo.
-
-Il resto del documento è organizzato come segue: il @cap:tecnologie[Capitolo] presenta gli strumenti e le tecnologie utilizzate durante lo stage; il @cap:analisi-requisiti[Capitolo] descrive lo studio preliminare degli approcci possibili e l'analisi dei requisiti; il @cap:progettazione[Capitolo] illustra la progettazione e lo sviluppo del servizio; il @cap:verifica[Capitolo] descrive le attività di verifica e validazione; il @cap:conclusioni[Capitolo] conclude il documento con una valutazione del lavoro svolto e delle prospettive future.
+La tesi è divisa in sei capitoli, che ripercorrono il lavoro nell'ordine in cui è stato svolto. Il primo, che si chiude con questa sezione, presenta l'azienda ospitante e il progetto di stage. Il @cap:tecnologie[Capitolo] descrive gli strumenti e le tecnologie utilizzate. Il @cap:analisi-requisiti[Capitolo] delimita il sistema e ne analizza i requisiti. Il @cap:progettazione[Capitolo] illustra lo studio degli approcci possibili, la progettazione e lo sviluppo del servizio. Il @cap:verifica[Capitolo] riporta le attività di verifica e validazione. Il @cap:conclusioni[Capitolo] trae un bilancio del lavoro svolto e delle prospettive future.
 
 Riguardo la stesura del testo sono state adottate le seguenti convenzioni tipografiche:
 

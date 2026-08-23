@@ -1,0 +1,49 @@
+@startuml sequenza-produzione
+skinparam dpi 300
+skinparam shadowing false
+skinparam defaultFontSize 20
+skinparam sequenceMessageAlign left
+skinparam ArrowColor #444444
+skinparam ParticipantBorderColor #444444
+skinparam ParticipantBackgroundColor #F5F5F5
+skinparam SequenceLifeLineBorderColor #888888
+hide footbox
+
+participant "consumatore" as C
+participant "summary" as S
+participant "store" as ST
+participant "tenant" as T
+participant "kpi" as K
+participant "Cube" as CUBE
+participant "modello" as LLM
+
+C -> C: valida
+C -> S: Produce(entità, evento)
+
+S -> ST: Get(entità, evento)
+alt la sintesi esiste già
+  ST --> S: testo
+  S --> C: testo, senza rigenerare
+else non esiste
+  ST --> S: non trovata
+
+  S -> T: Get()
+  T --> S: lingua, fuso
+
+  S -> K: Blocks(entità, evento, fuso)
+  K -> K: legge le query
+  loop una goroutine per query
+    K -> CUBE: query + token JWT
+    CUBE --> K: valori
+  end
+  K --> S: blocchi e istruzioni
+
+  S -> S: compone il payload
+  S -> LLM: Complete(payload)
+  LLM --> S: testo
+
+  S -> ST: Save(entità, evento, testo)
+  S --> C: testo
+end
+
+@enduml

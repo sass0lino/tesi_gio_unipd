@@ -1,3 +1,68 @@
+adk-go:
+  type: web
+  title: Build reliable multi-agent applications with ADK Go 2.0
+  author:
+  - Klopfenstein, Toni
+  - Maddula, Sampath Kumar
+  date: 2026-06-30
+  publisher: Google Developers Blog
+  url: https://developers.googleblog.com/announcing-adk-go-20/
+
+lyft-semantic-layer:
+  type: article
+  title: "Metric Semantic Layer: How Lyft Governs and Scales Key Data Definitions"
+  author:
+  - Channe, Rohit
+  - Mirchandani, Simran
+  date: 2026-06-10
+  parent:
+    type: periodical
+    title: Lyft Engineering
+  url: https://eng.lyft.com/metric-semantic-layer-how-lyft-governs-and-scales-key-data-definitions-56bee3643c29
+
+hybrid-search-rag:
+  type: article
+  title: Hybrid Search and Re-Ranking in Production RAG
+  author: Bhardwaj, Priyansh
+  date: 2026-05-12
+  parent:
+    type: periodical
+    title: Towards Data Science
+  url: https://towardsdatascience.com/hybrid-search-and-re-ranking-in-production-rag/
+
+cube-extending:
+  type: web
+  title: Extending cubes
+  publisher: Cube Dev
+  url: https://docs.cube.dev/docs/data-modeling/extending-cubes
+
+design-patterns:
+  type: book
+  title: "Design Patterns: Elements of Reusable Object-Oriented Software"
+  author:
+  - Gamma, Erich
+  - Helm, Richard
+  - Johnson, Ralph
+  - Vlissides, John
+  publisher: Addison-Wesley
+  date: 1994
+
+hexagonal-architecture:
+  type: web
+  title: Hexagonal Architecture
+  author: Cockburn, Alistair
+  date: 2005
+  url: https://alistair.cockburn.us/hexagonal-architecture/
+
+integration-patterns:
+  type: book
+  title: "Enterprise Integration Patterns: Designing, Building, and Deploying Messaging Solutions"
+  author:
+  - Hohpe, Gregor
+  - Woolf, Bobby
+  publisher: Addison-Wesley
+  date: 2003
+
 'models-and-fair-use':
   type: article
   title: Foundation Models and Fair Use
