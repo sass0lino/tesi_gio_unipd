@@ -17,33 +17,33 @@ participant "kpi" as K
 participant "Cube" as CUBE
 participant "modello" as LLM
 
-C -> C: valida
-C -> S: Produce(entità, evento)
+C -> C: valida il messaggio
+C -> S: produci il riepilogo
 
-S -> ST: Get(entità, evento)
-alt la sintesi esiste già
-  ST --> S: testo
-  S --> C: testo, senza rigenerare
+S -> ST: cerca il riepilogo
+alt il riepilogo esiste già
+  ST --> S: il riepilogo
+  S --> C: il riepilogo, senza chiamare il modello
 else non esiste
-  ST --> S: non trovata
+  ST --> S: nessun riepilogo
 
-  S -> T: Get()
+  S -> T: leggi lingua e fuso
   T --> S: lingua, fuso
 
-  S -> K: Blocks(entità, evento, fuso)
-  K -> K: legge le query
+  S -> K: recupera i dati
+  K -> K: legge le query configurate
   loop una goroutine per query
-    K -> CUBE: query + token JWT
+    K -> CUBE: interroga
     CUBE --> K: valori
   end
-  K --> S: blocchi e istruzioni
+  K --> S: dati e istruzioni
 
   S -> S: compone il payload
-  S -> LLM: Complete(payload)
-  LLM --> S: testo
+  S -> LLM: genera il testo
+  LLM --> S: il testo
 
-  S -> ST: Save(entità, evento, testo)
-  S --> C: testo
+  S -> ST: salva il riepilogo
+  S --> C: il riepilogo
 end
 
 @enduml

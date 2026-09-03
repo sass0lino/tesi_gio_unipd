@@ -6,25 +6,27 @@
 
 = Verifica e validazione <cap:verifica>
 #text(style: "italic", [
-    In questo capitolo descrivo come ho verificato che il servizio funzioni come previsto e come ne ho validato il risultato con l'azienda, riportando il grado di soddisfacimento dei requisiti e i limiti delle prove svolte.
+    In questo capitolo descrivo come ho verificato che il servizio funzioni correttamente e come ne ho validato il risultato con l'azienda, riportando il grado di soddisfacimento dei requisiti e i limiti delle prove svolte.
 ])
 #v(1em)
 
 == Approccio adottato
 
-Le attività descritte in questo capitolo rispondono a due domande distinte. La verifica chiede se il servizio faccia ciò che è stato specificato, e si risponde con prove ripetibili condotte sul codice. La validazione chiede se ciò che è stato specificato sia effettivamente utile a chi lo userà, e a questa risponde soltanto il giudizio di chi conosce il dominio.
+Le attività descritte in questo capitolo rispondono a due domande distinte:
+- *verifica*  chiede se il servizio faccia ciò che è stato specificato;
+- *validazione* chiede se ciò che è stato specificato sia effettivamente utile a chi lo userà
 
-Il servizio è stato verificato su due livelli. Il primo è costituito dai test automatici, che esercitano le singole parti in isolamento e i punti in cui il comportamento è meno evidente. Il secondo è la prova del flusso completo nell'ambiente di sviluppo locale, che riproduce l'infrastruttura di produzione e attinge ai dati reali dell'ambiente di _staging_ aziendale.
+Il servizio è stato verificato in due modi, ai quali sono dedicate le due sezioni seguenti. I test automatici provano le singole parti in isolamento, si eseguono con un solo comando e possono quindi essere ripetuti a ogni modifica. I test di sistema riguardano il servizio intero collegato ai sistemi veri, nell'ambiente di sviluppo locale che riproduce l'infrastruttura di produzione e attinge ai dati reali dell'ambiente di _staging_ aziendale. Sono stati eseguiti a mano perché mettono in gioco situazioni che un test automatico non riproduce, come spegnere una sorgente dati o fermare il servizio mentre sta elaborando.
 
-Va detto subito, per non attribuire al lavoro un rigore che non ha avuto, che i test automatici non sono stati scritti insieme al codice ma nella parte conclusiva dello stage, quando la struttura del servizio si era stabilizzata. Durante lo sviluppo la verifica è stata manuale, condotta eseguendo il flusso e osservandone il risultato. La scelta ha una ragione, ovvero che la forma del servizio è cambiata a fondo più di una volta e i test scritti presto sarebbero stati riscritti altrettante, ma ha anche un costo che è giusto riconoscere: alcuni difetti sono stati individuati più tardi di quanto sarebbe accaduto altrimenti.
+Va subito detto, che i test automatici non sono stati scritti insieme al codice ma nella parte conclusiva dello stage. Durante lo sviluppo la verifica è stata manuale, condotta eseguendo il flusso e osservandone il risultato. La scelta ha una ragione, cioè che la forma del servizio è cambiata a fondo più di una volta e i test scritti presto sarebbero stati riscritti altrettante, ma ha anche un costo che è giusto riconoscere: alcuni difetti sono stati individuati più tardi di quanto sarebbe accaduto altrimenti.
 
 == Test automatici
 
-I test sono scritti con il package `testing` della libreria standard di Go, senza librerie di asserzione esterne, coerentemente con l'uso prevalente nell'ecosistema del linguaggio. Si dividono in due famiglie a seconda di come trattano le dipendenze esterne.
+I test sono scritti con il package `testing` della libreria standard di Go, senza librerie esterne (coerentemente con la filosofia del linguaggio), e sono di due tipi:
 
-*Test di unità.* Riguardano i package in cui la logica è propria del servizio e le dipendenze sono dichiarate come interfacce, secondo quanto descritto nel @cap:progettazione[Capitolo]. Al posto del modello linguistico, del semantic layer e dell'archivio vengono fornite realizzazioni finte, che restituiscono valori prestabiliti e registrano le chiamate ricevute. La parte in esame resta così isolata dal resto, e il flusso di produzione si verifica per intero senza chiamare il modello: senza costi, senza rete e con esito sempre uguale a parità di ingressi.
+- *Test di unità.* Riguardano i package in cui la logica è propria del servizio e le dipendenze sono dichiarate come interfacce, secondo quanto descritto nel @cap:progettazione[Capitolo]. Al posto del modello linguistico, del semantic layer e dell'archivio vengono fornite realizzazioni simulate, che restituiscono valori prestabiliti e registrano le chiamate ricevute. La parte in esame resta così isolata dal resto, e il flusso di produzione si verifica per intero senza chiamare il modello (senza costi, senza rete e con esito sempre uguale a parità di ingressi).
 
-*Test di integrazione.* Riguardano i package che parlano con MongoDB, dove ciò che va verificato è proprio l'interrogazione e non la logica che la circonda. Sostituire il database con una finzione verificherebbe soltanto che il codice chiama i metodi che il codice chiama, senza dire nulla sul fatto che il filtro sia corretto. Questi test avviano quindi un'istanza reale di MongoDB in un container, vi inseriscono i documenti necessari, eseguono le operazioni e distruggono il container al termine.
+- *Test di integrazione.* Riguardano i package che parlano con MongoDB, dove ciò che va verificato è proprio l'interrogazione e non la logica che la circonda. Questi test avviano quindi un'istanza reale di MongoDB in un container, vi inseriscono i documenti necessari, eseguono le operazioni e distruggono il container al termine. L'avvio e la distruzione del container sono raccolti in una funzione di supporto, che ciascuno di questi test richiama con una riga.
 
 ```go
 // internal/mongotest/mongotest.go
@@ -54,32 +56,32 @@ func Start(t *testing.T) *mongo.Client {
 }
 ```
 
-Le due chiamate a `t.Cleanup` sono ciò che rende sostenibile questo approccio: la chiusura del container e della connessione viene registrata subito dopo l'apertura ed eseguita comunque, anche se il test fallisce a metà. Senza di esse un test interrotto lascerebbe container attivi sulla macchina.
+Le due chiamate a `t.Cleanup` sono ciò che rende sostenibile questo approccio: la chiusura del container e della connessione viene registrata subito dopo l'apertura ed eseguita comunque, anche se il test fallisce a metà (senza di esse un test interrotto lascerebbe container attivi sulla macchina).
 
-La @tab:test riassume che cosa verifica ciascun gruppo di test e a quali requisiti si riferisce.
+In tutto la suite comprende sedici casi, otto di unità e otto di integrazione. La @tab:test riassume che cosa verifica ciascun gruppo e a quali requisiti si riferisce.
 
 #figure(
   caption: [Test automatici e requisiti verificati.],
   table(
-    columns: (auto, 2.2fr, auto),
+    columns: (auto, 1fr, 8.1em),
     align: (left + horizon, left, left + horizon),
     fill: (x, y) => if y == 0 { luma(230) },
     table.header([*Package*], [*Comportamento verificato*], [*Requisiti*]),
     [`store`],
-      [Un riepilogo salvato viene riletto correttamente; la ricerca distingue entità ed evento; l'invalidazione cancella tutti i riepiloghi dell'entità e non solo quelli di un evento; invalidare un'entità priva di riepiloghi non produce errore.],
-      [RF-OB\_06, RF-OB\_07, RQA-OB\_07],
+      [Un riepilogo salvato viene riletto correttamente; un secondo salvataggio sulla stessa chiave lo aggiorna invece di duplicarlo; la ricerca su un'entità priva di riepiloghi non trova nulla; l'invalidazione cancella tutti i riepiloghi dell'entità e non solo quelli di un evento, e invalidare un'entità che non ne ha non produce errore.],
+      [RF‑OB\_06, RF‑OB\_07, RQA‑OB\_07],
     [`tenant`],
-      [Le impostazioni del cliente vengono lette dal documento corretto anche in presenza di altri documenti nella stessa collection; in assenza di impostazioni la lingua ricade sull'inglese e il fuso orario resta non specificato.],
-      [RQA-OB\_02, RQA-OB\_03],
+      [Le impostazioni del cliente vengono lette dal documento corretto anche in presenza di altri documenti nella stessa collection; una lingua configurata ma non supportata ricade sull'inglese; in assenza di impostazioni la lingua ricade sull'inglese e il fuso orario resta non specificato.],
+      [RQA‑OB\_02, RQA‑OB\_03],
     [`kpi`],
-      [Le interrogazioni configurate vengono eseguite e i risultati raccolti con le rispettive istruzioni; il fuso orario del cliente viene aggiunto a ciascuna interrogazione, e non compare quando il cliente non lo ha impostato.],
-      [RF-OB\_03, RQA-OB\_03],
+      [Nell'interrogazione inviata al semantic layer il segnaposto è sostituito con l'identificativo dell'entità; i risultati sono raccolti con le rispettive istruzioni di lettura; il fuso orario del cliente viene aggiunto all'interrogazione, e non compare quando non è impostato.],
+      [RF‑OB\_03, RQA‑OB\_03],
     [`summary`],
       [Se il riepilogo esiste già viene restituito senza chiamare il modello; se non esiste viene percorso l'intero flusso, dalla raccolta dei dati alla chiamata al modello al salvataggio.],
-      [RF-OB\_01, RF-OB\_05, RQA-OB\_07],
+      [RF‑OB\_01, RF‑OB\_05, RQA‑OB\_07],
     [`cmd`],
-      [La consultazione restituisce il riepilogo quando esiste; quando non esiste segnala l'assenza senza trattarla come un errore.],
-      [RF-OB\_04, RF-OB\_06],
+      [La consultazione restituisce il riepilogo quando esiste e ne segnala l'assenza quando non esiste, senza trattarla come un errore; una richiesta priva di un parametro obbligatorio viene respinta; un errore dell'archivio produce una risposta di errore e non l'interruzione del servizio.],
+      [RF‑OB\_04, RF‑OB\_06, RQA‑OB\_06],
   )
 )<tab:test>
 
@@ -96,18 +98,18 @@ L'intera suite viene eseguita con un solo comando e termina con esito positivo. 
     [`store`], [87,0%], [],
     [`summary`], [77,8%], [Non coperti i rami di errore delle dipendenze],
     [`kpi`], [45,7%], [Non coperta la lettura delle interrogazioni da MongoDB],
-    [`cmd`], [19,8%], [Coperta la sola consultazione; avvio e configurazione non sono sotto test],
+    [`cmd`], [19,8%], [Coperta la sola consultazione; avvio, configurazione e funzioni di consumo delle code non sono sotto test],
     [`clients`], [0%], [Adattatori verso i sistemi esterni, privi di logica propria],
   )
 )<tab:copertura>
 
-I valori vanno letti per quello che sono. La copertura misura quante istruzioni vengono eseguite durante i test, non quanti comportamenti significativi siano stati verificati, ed è quindi un indicatore utile a individuare le zone d'ombra più che a certificare la qualità. Le zone d'ombra qui sono due e le dichiaro esplicitamente: i rami di gestione degli errori, verificati solo in parte, e il codice di avvio del servizio, che non è sotto test perché la sua verifica coincide di fatto con l'avvio del servizio stesso, oggetto delle prove manuali descritte nella sezione seguente. La copertura nulla degli adattatori verso i sistemi esterni è invece una conseguenza voluta della struttura: contengono la sola traduzione tra le chiamate del servizio e le API dei sistemi, e verificarli richiederebbe quei sistemi.
+I valori vanno letti per quello che sono. La copertura misura quante istruzioni vengono eseguite durante i test, non quanti comportamenti significativi siano stati verificati, ed è quindi un indicatore utile a individuare le zone d'ombra più che a certificare la qualità.
 
-== Verifica del flusso completo
+== Test di sistema manuali
 
-I test automatici verificano le parti; resta da verificare che il servizio funzioni quando le parti sono collegate ai sistemi veri. Per questo è stato allestito un ambiente di sviluppo locale che riproduce l'infrastruttura di produzione: MongoDB, Cube e la coda vengono eseguiti come container, con ElasticMQ al posto di SQS. Il codice del servizio è identico a quello che andrebbe in produzione, e cambia soltanto l'indirizzo della coda nella configurazione. I dati sono quelli reali dell'ambiente di staging aziendale.
+I test automatici verificano le parti; resta da verificare che il servizio funzioni quando le parti sono collegate ai sistemi reali. Per questo è stato allestito un ambiente di sviluppo locale che riproduce l'infrastruttura di produzione: MongoDB, Cube e la coda vengono eseguiti come container, con ElasticMQ al posto di SQS. Il codice del servizio è identico a quello che andrebbe in produzione, e cambia soltanto l'indirizzo della coda nella configurazione. I dati sono quelli reali dell'ambiente di staging aziendale.
 
-Su questo ambiente ho verificato gli scenari seguenti.
+Su questo ambiente ho eseguito a mano i seguenti scenari.
 
 / Produzione di un riepilogo: inviato il comando sulla coda, il servizio recupera le interrogazioni del cliente, ottiene i valori dal semantic layer, produce il testo e lo conserva. Il testo è stato confrontato con i dati di partenza per accertare che ogni valore riportato vi trovasse riscontro.
 / Consultazione di un riepilogo esistente: l'endpoint restituisce il testo conservato senza attivare alcuna produzione.
@@ -119,6 +121,14 @@ Su questo ambiente ho verificato gli scenari seguenti.
 
 L'ultimo scenario merita una precisazione: la mia prova ne accerta il comportamento nominale, ma non copre il caso in cui l'elaborazione ecceda il limite di tempo previsto per l'arresto. Quel caso è affidato all'idempotenza, verificata separatamente.
 
+
+== Validazione del risultato
+
+Il confronto con il tutor aziendale ha riguardato soprattutto le scelte di approccio e di realizzazione, quelle discusse nel @cap:progettazione[Capitolo], ma ha toccato fin dall'inizio anche il contenuto del riepilogo. L'indicazione di partenza era di restare sui KPI aggregati, accompagnati da qualche analisi elementare, come l'andamento del rischio negli anni. I primi riepiloghi prodotti sui dati reali sono stati giudicati adeguati già in quella forma.
+
+Di mia iniziativa avevo aggiunto al riepilogo delle ispezioni una quantità di informazioni puntuali sulle singole occorrenze. Il tutor ha chiesto di toglierle, per mantenere il riepilogo sul piano generale degli aggregati. Le informazioni puntuali sono rientrate più tardi con lo scenario dei ticket, e in quella forma sono state accolte: dei ticket aperti il riepilogo riporta quando sono stati aperti, la priorità, lo stato e di che cosa trattano.
+
+Anche le due modifiche successive sono nate da una mia proposta, poi approvata dal tutor, e vengono dal confronto fra il riepilogo e la scheda che ha davanti l'operatore. Il testo veniva prodotto in inglese, inservibile per un operatore italiano sul campo, e le date calcolate in UTC dal semantic layer non coincidevano con quelle mostrate dalla piattaforma: uno scarto di un giorno su una data di chiusura non è un difetto che il codice segnali in alcun modo. Ne sono derivati i requisiti RQA-OB\_02 e RQA-OB\_03.
 
 == Grado di soddisfacimento dei requisiti
 
@@ -161,7 +171,7 @@ La @tab:tracciamento-verifiche indica per ciascun requisito il modo in cui è st
     fill: (x, y) => if y == 0 { luma(230) },
     table.header([*Requisito*], [*Verifica*]),
     [RF-OB\_01], [Test di unità e prova sul flusso completo],
-    [RF-OB\_02], [Validazione con il tutor aziendale],
+    [RF-OB\_02], [Validazione del risultato con il tutor aziendale],
     [RF-OB\_03], [Test di unità e prova sul flusso completo],
     [RF-OB\_04], [Test di unità e prova sul flusso completo],
     [RF-OB\_05], [Test di unità e prova sul flusso completo],
@@ -172,10 +182,10 @@ La @tab:tracciamento-verifiche indica per ciascun requisito il modo in cui è st
     [RF-OP\_01], [Non realizzato],
     [RQA-OB\_01], [Prova sul flusso completo: confronto fra i valori nel testo e i dati di partenza],
     [RQA-OB\_02], [Test di integrazione e prova sul flusso completo],
-    [RQA-OB\_03], [Test di unità, test di integrazione e validazione con il tutor],
+    [RQA-OB\_03], [Test di unità, test di integrazione e validazione del risultato],
     [RQA-OB\_04], [Non verificato: la configurazione comprende un solo cliente],
     [RQA-OB\_05], [Prova sul flusso completo: arresto durante l'elaborazione],
-    [RQA-OB\_06], [Prova sul flusso completo: indisponibilità del semantic layer],
+    [RQA-OB\_06], [Test di unità e prova sul flusso completo: indisponibilità del semantic layer],
     [RQA-OB\_07], [Test di unità, test di integrazione e ripetizione dell'invalidazione],
     [RQA-DE\_01], [Verifica sul campo: il riepilogo dei ticket è stato aggiunto senza modifiche al codice],
     [RQA-DE\_02], [Misura sperimentale su ventuno generazioni: requisito non soddisfatto],
@@ -186,13 +196,15 @@ La @tab:tracciamento-verifiche indica per ciascun requisito il modo in cui è st
   )
 )<tab:tracciamento-verifiche>
 
-Due righe meritano una nota. RQA-DE\_01, la configurabilità per cliente, non ha un test dedicato ma una verifica più convincente di un test: il secondo tipo di entità è stato messo in esercizio a servizio già funzionante, e per farlo sono bastati nuovi documenti di configurazione. RQA-OB\_04, la segregazione fra clienti, è l'unico requisito obbligatorio privo di verifica, per la ragione discussa più avanti fra i limiti.
+- Attenzione 1: RQA-DE\_01 (configurabilità per cliente) non ha un test dedicato ma una verifica fatta "sul campo", infatti il secondo tipo di entità è stato messo in esercizio a servizio già funzionante, e per farlo sono bastati nuovi documenti di configurazione (oltre al setup del semantic layer).
+- Attenzione 2: RQA-OB\_04 (segregazione fra clienti) è l'unico requisito obbligatorio privo di verifica, per la ragione discussa più avanti fra i limiti.
 
-=== La lunghezza del riepilogo
+=== Approfondimento: la lunghezza del riepilogo
 
-RQA-DE\_02 chiede che la sintesi si mantenga entro una lunghezza massima, scegliendo i contenuti in ordine di importanza quando i dati eccedono. Il tentativo fatto durante lo stage è stato il più semplice possibile: dichiarare il limite fra le istruzioni al modello. Una prima misura ha dato 930 caratteri contro i 650 dichiarati.
+RQA-DE\_02 chiede che la sintesi si mantenga entro una lunghezza massima, scegliendo i contenuti in ordine di importanza quando i dati eccedono. Durante lo stage questo requisito è stato affrontato nel modo più semplice possibile: dichiarare il limite fra le istruzioni al modello. Facendo qualche test ho subito notato che il limite non veniva rispettato.
 
-Per capire se il limite fosse almeno seguito come indicazione ho generato sette volte lo stesso riepilogo, cancellandolo fra una prova e l'altra così che venisse prodotto da capo, e ho ripetuto la serie con il limite dichiarato portato a 750 caratteri e poi abbassato a 500, lasciando invariato tutto il resto.
+Per capire se il limite fosse seguito almeno come indicazione, ho testato empiricamente il servizio.
+Ho generato sette volte lo stesso riepilogo per 3 limiti di lunghezza differenti - 500, 650 e 750 caratteri - lasciando invariati tutti gli altri parametri.
 
 #figure(
   caption: [Lunghezza in caratteri di sette generazioni per ciascun limite dichiarato nell'istruzione.],
@@ -207,25 +219,11 @@ Per capire se il limite fosse almeno seguito come indicazione ho generato sette 
   )
 )<tab:lunghezza>
 
-Il numero scritto nell'istruzione non governa la lunghezza del testo. Abbassare il limite a 500 ha prodotto i testi più lunghi dei tre gruppi; alzarlo a 750 non li ha allungati in proporzione. Le tre medie stanno fra 759 e 827 caratteri, e lo scarto che le separa, 68 caratteri, è dello stesso ordine della variabilità interna a ciascun gruppo, che va da 33 a 61. Nessuna delle ventuno generazioni è rientrata nel proprio limite.
+Il numero scritto nell'istruzione non governa la lunghezza del testo. Abbassare il limite a 500 ha prodotto i testi più lunghi dei tre gruppi; alzarlo a 750 non li ha allungati in proporzione. Nessuna delle ventuno generazioni è rientrata nel proprio limite.
 
-A governare la lunghezza è il contenuto. L'entità usata per le prove ha un ticket aperto e cinque chiusi di recente, e le istruzioni dei singoli blocchi chiedono per ciascuno la data, la priorità, lo stato e una descrizione: il limite complessivo e le istruzioni di dettaglio sono richieste in conflitto, e il modello risolve il conflitto a favore del dettaglio.
+A governare la lunghezza è il contenuto. L'entità usata per le prove ha un ticket aperto e cinque chiusi di recente, e le istruzioni dei singoli blocchi chiedono per ciascuno la data, la priorità, lo stato e una descrizione: il limite complessivo e le istruzioni di dettaglio sono richieste in conflitto, e il modello lo risolve a favore del dettaglio.
 
-Il requisito non è quindi soddisfatto, e l'esperimento mostra che la strada tentata è chiusa: nessuna riformulazione dell'istruzione lo renderebbe tale. Il @cap:conclusioni[Capitolo] riprende la questione indicando dove intervenire.
-
-== Validazione con il tutor aziendale
-
-La verifica accerta la conformità alla specifica, ma non dice se un riepilogo sia utile a un operatore che deve decidere se intervenire su un impianto. Su questo l'unico giudizio che conta è quello di chi conosce il dominio, e il servizio è stato quindi sottoposto con regolarità al tutor aziendale, leggendo insieme i testi prodotti sui dati reali.
-
-Questi confronti hanno inciso sul risultato più di quanto suggerisca la loro informalità, e in particolare hanno prodotto tre correzioni.
-
-La prima riguarda ciò che il riepilogo deve contenere. Le prime versioni si limitavano ai KPI aggregati, ed erano formalmente corrette ma poco utili: un operatore che vede quanti ticket sono aperti vuole sapere di che cosa trattano. Da qui l'inclusione delle informazioni puntuali sulle singole occorrenze, con le relative istruzioni di lettura.
-
-La seconda riguarda la lingua. Il servizio produceva testi in inglese, cosa che nelle prove tecniche non aveva dato nell'occhio ma che rende il riepilogo inservibile per un operatore italiano sul campo. Ne è derivato il requisito RQA-OB\_02 e la lettura della lingua dalle impostazioni del cliente.
-
-La terza riguarda le date, ed è la correzione che sarebbe stata più difficile da individuare per altra via. Le date calcolate in UTC dal semantic layer non coincidevano con quelle mostrate dalla piattaforma, e uno scarto di un giorno su una data di chiusura non è un difetto che il codice segnali in alcun modo: si nota solo confrontando il riepilogo con la scheda, cioè facendo quello che farà l'operatore. Ne è derivato il requisito RQA-OB\_03.
-
-Vale la pena osservare che tutte e tre le correzioni riguardano il contenuto del riepilogo e nessuna il suo funzionamento. È la conferma pratica di una distinzione che sulla carta sembra scolastica: un servizio può superare ogni test e produrre un risultato inutile, e l'unico modo per accorgersene è mostrarlo a chi lo userà.
+Il requisito non è quindi soddisfatto. Il @cap:conclusioni[Capitolo] riprende la questione suggerendo approcci differenti.
 
 == Limiti della verifica svolta
 
@@ -236,5 +234,7 @@ Il servizio non è stato provato sotto carico. Non esistono misure su quante ric
 Il comportamento in caso di messaggi ripetutamente malformati non è stato provato, coerentemente con il fatto che la coda di scarto non è stata configurata: è la lacuna già dichiarata nel @cap:progettazione[Capitolo].
 
 Anche la segregazione dei dati fra clienti è rimasta senza prova. Il requisito RQA-OB\_04 è soddisfatto per costruzione, perché come descritto nel @cap:progettazione[Capitolo] ogni cliente ha un proprio database e un proprio modello compilato, ma la configurazione allestita durante lo stage comprende un solo cliente. Manca quindi l'unica prova che varrebbe davvero: un secondo cliente a cui i dati del primo risultino inaccessibili.
+
+La validazione si è fermata al giudizio del tutor aziendale. Nessun operatore ha usato i riepiloghi nel proprio lavoro, quindi manca il riscontro che conterebbe di più, cioè se servano davvero a chi deve decidere se intervenire su un impianto.
 
 Infine, l'assenza dell'integrazione in produzione fa sì che tutte le prove siano state condotte in un ambiente che riproduce quello reale ma non lo è. La riproduzione è fedele nei componenti e nei dati, ma non nella scala, nella concorrenza tra più consumatori e nelle condizioni di rete.

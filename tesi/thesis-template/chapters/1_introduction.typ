@@ -50,7 +50,7 @@ _Soluzione:_ in accordo con il tutor aziendale, l'ottimizzazione dell'interfacci
 
 _Descrizione:_ i database dei vari clienti hanno schemi per lo più simili, ma presentano campi personalizzati; occorre inoltre garantire che ogni cliente possa accedere esclusivamente ai propri dati.
 
-_Soluzione:_ per i data model è stata utilizzata la direttiva `extends` di Cube, che permette di condividere le definizioni comuni estendendole in modo granulare per ciascun cliente; la segregazione dei dati è garantita dall'autenticazione tramite token JWT prevista nativamente da Cube. Anche le interrogazioni per il recupero dei KPI sono configurate per singolo tenant su MongoDB, senza interventi sul codice del servizio.
+_Soluzione:_ per i data model è stata utilizzata la direttiva `extends` di Cube, che permette di condividere le definizioni comuni estendendole in modo granulare per ciascun cliente; la segregazione dei dati si fonda invece sul fatto che a ciascun cliente corrispondono un database, un modello compilato e una cache propri, selezionati a partire dall'identificativo che il servizio presenta in un token JWT firmato. Anche le interrogazioni per il recupero dei KPI sono configurate per singolo tenant su MongoDB, senza interventi sul codice del servizio.
 
 *4. Definizione del perimetro dei KPI*
 
@@ -109,7 +109,7 @@ La fase di studio e confronto delle tecnologie, alla quale il piano destinava tr
 
 A questa fase si è affiancata una questione che la pianificazione non contemplava: l'interfacciamento tra il semantic layer e il database aziendale. Trattandosi di un database non relazionale, il problema è di natura infrastrutturale e ha assorbito una porzione consistente del tempo.
 
-L'analisi dei requisiti, che il piano collocava nelle prime due settimane, si è distribuita lungo l'intero periodo. L'autonomia lasciatami sul modo di realizzare gli obiettivi ha fatto sì che diversi requisiti si precisassero mentre il lavoro procedeva, restando a lungo impliciti nei confronti con il tutor; la loro formalizzazione, avvenuta nella parte conclusiva dello stage, ha reso evidenti alcuni punti su cui il servizio non era ancora allineato a quanto concordato, il cui adeguamento ha occupato l'ultima fase dello sviluppo.
+L'analisi dei requisiti, che il piano collocava nelle prime due settimane, si è distribuita lungo l'intero periodo. L'autonomia lasciatami sul modo di realizzare gli obiettivi ha fatto sì che diversi requisiti si precisassero mentre il lavoro procedeva, restando a lungo impliciti nei confronti con il tutor; la loro formalizzazione, avvenuta nella parte conclusiva dello stage, ha reso evidenti alcuni punti su cui il servizio non era ancora allineato a quanto concordato, in particolare la lingua del testo e il fuso orario con cui vengono calcolate le date, il cui adeguamento è rientrato nell'ultima fase dello sviluppo.
 
 Il collaudo previsto dalle settimane conclusive si è svolto nell'ambiente di sviluppo locale, sui dati reali dell'ambiente di _staging_ aziendale, e si è accompagnato alla scrittura dei test automatici; l'integrazione nell'infrastruttura di produzione, corrispondente all'obiettivo desiderabile D01, non è stata invece realizzata.
 

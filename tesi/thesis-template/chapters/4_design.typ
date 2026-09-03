@@ -6,13 +6,13 @@
 
 = Progettazione e sviluppo <cap:progettazione>
 #text(style: "italic", [
-    In questo capitolo espongo lo studio degli approcci possibili, l'architettura del servizio, le scelte di progettazione che ne hanno determinato la forma, il modello dati del semantic layer e lo sviluppo dei singoli componenti, documentato sul codice effettivo.
+    In questo capitolo espongo lo studio degli approcci possibili, il modello dati con cui i KPI sono definiti, le scelte di progettazione che hanno dato forma al servizio, la struttura che ne è derivata e lo sviluppo dei singoli componenti, documentato sul codice effettivo.
 ])
 #v(1em)
 
-Il @cap:analisi-requisiti[Capitolo] ha stabilito che cosa il sistema deve fare. Questo capitolo espone il come, procedendo dall'alto verso il basso: prima lo studio che ha portato a scegliere il modo in cui i dati arrivano al modello linguistico, poi l'architettura complessiva e le decisioni di progetto, quindi il modello dati con cui i KPI vengono definiti, infine i componenti del servizio, presentati uno a uno insieme al codice che li realizza.
+Il @cap:analisi-requisiti[Capitolo] ha stabilito che cosa il sistema deve fare. Questo capitolo espone il come, ed è diviso in due metà. La prima riguarda i dati: lo studio che ha portato a scegliere il modo in cui arrivano al modello linguistico, e il modello dati costruito per definirli. La seconda riguarda il servizio: le decisioni che ne hanno determinato la forma, la struttura che ne è risultata e infine i componenti, presentati uno a uno insieme al codice che li realizza.
 
-== Studio degli approcci
+== Studio preliminare degli approcci
 
 === Il vincolo del determinismo
 
@@ -70,7 +70,7 @@ La scelta è caduta sul semantic layer, e il prodotto adottato è Cube. Oltre a 
 
 L'accostamento fra semantic layer e modello linguistico non è isolato. Lyft, che ha costruito uno strato analogo per le stesse ragioni, ne espone oggi le definizioni agli agenti di intelligenza artificiale proprio perché la loro struttura deterministica riduce le allucinazioni nelle analisi generate @lyft-semantic-layer.
 
-Va osservato che la scelta ha un costo, ed è opportuno dichiararlo: il semantic layer non risponde a domande impreviste. Ogni metrica che non è stata definita non esiste, e il servizio non può recuperarla. Questo è accettabile perché il riepilogo non è una conversazione ma un testo a struttura nota, il cui contenuto è deciso in anticipo dal tipo di entità e dall'evento che lo richiede. Sarebbe inaccettabile in uno scenario di interrogazione libera, che è infatti l'obiettivo O04 rimasto fuori dal perimetro (sebbene probabilmente adottare questo sistema anche nel caso di Text-to-SQL dovrebbe aiutare grazie al sistema di measures e dimensions).
+Va osservato che la scelta ha un costo, ed è opportuno dichiararlo: il semantic layer non risponde a domande impreviste. Ogni metrica che non è stata definita non esiste, e il servizio non può recuperarla. Questo è accettabile perché il riepilogo non è una conversazione ma un testo a struttura nota, il cui contenuto è deciso in anticipo dal tipo di entità e dall'evento che lo richiede. Sarebbe inaccettabile in uno scenario di interrogazione libera, che è infatti l'obiettivo O04 rimasto fuori dal perimetro. Va detto che anche in quello scenario il semantic layer resterebbe utile: far generare al modello un'interrogazione fra le metriche e le dimensioni dichiarate è un problema molto più circoscritto che fargli scrivere SQL libero.
 
 === Interfacciamento tra la sorgente dati e il semantic layer <sez:interfacciamento>
 
@@ -98,202 +98,18 @@ L'approccio è stato analizzato ma non realizzato. La ragione non è tecnica ma 
 
 Vale però osservare che la separazione di responsabilità stabilita all'inizio di questo capitolo rimane valida anche in quello scenario. Un frammento di documento recuperato è un dato reale, non una deduzione del modello, e viene fornito al modello nello stesso modo in cui gli vengono forniti i KPI. La struttura del servizio, come si vedrà nella @sez:summary[Sezione], è predisposta ad accogliere questa seconda sorgente senza modifiche al flusso.
 
-== Architettura del servizio <sez:architettura>
-
-=== Le tre operazioni
-
-Il servizio espone tre operazioni, che corrispondono a tre momenti distinti nella vita di un riepilogo.
-
-La *produzione* costruisce un riepilogo. Ricevuti il tenant, l'entità e l'evento che l'ha richiesta, recupera le interrogazioni configurate per quel caso, ne ottiene i valori dal semantic layer, li affida al modello linguistico e conserva il testo ottenuto.
-
-La *consultazione* restituisce un riepilogo già prodotto, oppure segnala che non ne esiste alcuno. Non produce nulla e non ha effetti: è una sola lettura.
-
-L'*invalidazione* elimina i riepiloghi di un'entità che è stata modificata, così che smettano di essere restituiti dalla consultazione.
-
-La divisione in tre operazioni distinte, e in particolare il fatto che la consultazione non produca mai nulla, è la scelta di progettazione più importante dell'intero servizio, e la motivo nella @sez:scelte[Sezione]. La @fig:architettura mostra il flusso completo.
-
-// sorgente del diagramma: tesi/puml/architettura.puml
-#figure(
-  caption: [Architettura del servizio e flusso delle tre operazioni.],
-  image("../images/architettura.png", width: 84%)
-)<fig:architettura>
-
-=== Stile architetturale
-
-Il servizio non viene invocato: resta in ascolto e reagisce a ciò che gli altri componenti della piattaforma producono. L'integrazione avviene per *scambio di messaggi asincroni*, e i due canali di ingresso portano messaggi di natura diversa. Sulla coda di produzione arrivano comandi, cioè richieste rivolte al servizio perché compia un'operazione. Sul canale di invalidazione arrivano notifiche di eventi: la piattaforma dichiara che un'entità è stata modificata, senza stabilire che cosa se ne debba fare, e la distribuzione avviene in _publish-subscribe_ attraverso un topic al quale più consumatori possono iscriversi @integration-patterns. È questa seconda forma a rendere il servizio autonomo nel mantenere validi i propri riepiloghi. Alle due code si affianca il canale sincrono della consultazione, riservato alle letture.
-
-All'interno, il servizio segue lo stile *ports and adapters*, noto anche come architettura esagonale @hexagonal-architecture. Il nucleo applicativo è il package `summary`, che non conosce alcun sistema esterno: dichiara le interfacce di ciò che gli occorre, e quelle interfacce sono le porte. Le realizzazioni concrete stanno fuori e ne sono gli adattatori: l'archivio su MongoDB, il servizio che recupera i KPI, il client del modello linguistico, il lettore delle impostazioni del cliente. Lo stesso criterio si ripete un livello più sotto, perché anche il servizio dei KPI dichiara a sua volta l'interfaccia del semantic layer di cui ha bisogno. Dal lato opposto stanno gli adattatori in ingresso, cioè i due consumatori di coda e il gestore dell'endpoint HTTP, la funzione che riceve la richiesta di consultazione e vi risponde. A collegare le due sponde è il _composition root_, l'unico luogo del programma che conosce insieme le porte e gli adattatori.
-
-Ciò che tiene insieme questa struttura è la direzione delle dipendenze, che puntano tutte verso il nucleo: è la persistenza a dipendere dall'interfaccia dichiarata dal dominio, non il dominio a dipendere da MongoDB. Da qui discendono due proprietà concrete. Sostituire l'archivio o il fornitore del modello linguistico non tocca la logica di produzione, perché il nucleo continua a vedere la stessa porta. E nei test quelle stesse porte accolgono realizzazioni finte, così il flusso si esercita per intero senza rete e senza costi.
-
-Da questo schema il servizio si discosta in un punto, deliberatamente: la consultazione non attraversa il nucleo, perché quel gestore legge l'archivio direttamente. È la scelta che le impedisce di produrre riepiloghi, per le ragioni esposte nella @sez:scelte[Sezione].
-
-=== Organizzazione del codice
-
-Il servizio è scritto in Go e segue l'organizzazione convenzionale del linguaggio, che distingue il codice eseguibile dai package di libreria. Sotto `cmd` risiede il punto di ingresso, che legge la configurazione, apre le connessioni verso i sistemi esterni, costruisce i componenti e avvia i tre ascoltatori. Sotto `internal` risiedono i package applicativi, ciascuno con una responsabilità circoscritta.
-
-#figure(
-  caption: [I package del servizio e le dipendenze tra essi.],
-  image("../images/pacchetti.png", width: 88%)
-)<fig:pacchetti>
-
-/ `summary`: coordina la produzione di un riepilogo, dalla raccolta dei dati alla chiamata al modello;
-/ `kpi`: recupera le interrogazioni configurate per il tenant e l'evento, le esegue sul semantic layer e ne restituisce i risultati;
-/ `store`: conserva, restituisce e cancella i riepiloghi prodotti;
-/ `tenant`: legge le impostazioni del cliente che influenzano il contenuto del riepilogo;
-/ `clients`: contiene gli adattatori verso i sistemi esterni, ovvero MongoDB, Cube, OpenAI e AWS;
-/ `config`: raccoglie e valida la configurazione da file e variabili d'ambiente.
-
-Come mostra la @fig:pacchetti, le frecce delle dipendenze puntano tutte dall'alto verso il basso: il punto di ingresso conosce ogni package, mentre i package applicativi non si conoscono tra loro e nessuno di essi importa gli altri. Il criterio che rende possibile questa struttura è che le dipendenze sono dichiarate da chi le usa e non da chi le fornisce, ed è approfondito nella @sez:summary[Sezione].
-
-== Scelte di progettazione <sez:scelte>
-
-Le decisioni raccolte in questa sezione non riguardano un singolo componente ma la forma complessiva del servizio. Sono le scelte su cui mi sono confrontato più a lungo con il tutor aziendale, e per ciascuna riporto le alternative valutate e la ragione della preferenza.
-
-=== Comandi asincroni e letture sincrone
-
-La prima versione del servizio riceveva ogni cosa dalla coda. Era una scelta comoda in prototipazione, ma inadeguata alla consultazione: l'operatore apre una scheda e attende una risposta, mentre una coda non risponde a chi le scrive.
-
-Ho quindi separato i due canali secondo la natura delle operazioni. La produzione e l'invalidazione sono comandi: modificano lo stato, richiedono tempo, possono fallire e in tal caso vanno ritentati. Una coda offre esattamente questo, perché conserva il messaggio finché non viene elaborato con successo e assorbe i picchi di richieste senza sovraccaricare il servizio. La consultazione è invece una lettura: è veloce, non ha effetti, e chi la esegue ha bisogno della risposta immediatamente. Un endpoint HTTP sincrono le si adatta senza sforzo.
-
-La distinzione tra comandi, che modificano lo stato, e interrogazioni, che si limitano a leggerlo, è un principio consolidato di progettazione; qui viene applicata ai canali, assegnando a ciascuna delle due famiglie il mezzo di trasporto che le è congeniale.
-
-Resta da spiegare come la piattaforma venga a sapere che una produzione richiesta è terminata. Il servizio non la avvisa: SQS non offre al mittente alcun riscontro sull'esito dell'elaborazione, e costruire un canale di notifica dedicato avrebbe aggiunto una componente al solo scopo di comunicare un fatto già osservabile. L'interfaccia interroga periodicamente la consultazione finché il riepilogo non compare, con un limite di tempo oltre il quale segnala all'operatore che la richiesta non è andata a buon fine. Il meccanismo riusa un'operazione che esiste già ed è la più economica del servizio.
-
-=== Una coda per ciascun comando
-
-I due comandi potevano viaggiare su una sola coda, distinti da un campo del messaggio. Ho preferito due code separate.
-
-I due messaggi hanno origini e forme diverse. La richiesta di produzione è definita insieme al servizio e ne segue il formato; la segnalazione di modifica appartiene alla piattaforma, esisteva già per altri scopi e arriva incapsulata nella struttura del sistema di distribuzione. Con una coda sola il consumatore dovrebbe riconoscere il formato prima di poterlo leggere, ramificare sul tipo di comando e cercare l'identificativo del tenant in posizioni diverse a seconda dei casi: una logica di smistamento che non appartiene a nessuno dei due flussi e che va mantenuta insieme a entrambi.
-
-Anche i volumi e i costi sono asimmetrici. Un'invalidazione è una cancellazione, arriva a ogni modifica di un'entità e può presentarsi a ondate quando la piattaforma esegue aggiornamenti massivi. Una produzione comporta diverse interrogazioni e una chiamata al modello linguistico, e dietro di essa c'è un operatore che aspetta. Su una coda condivisa un'ondata di invalidazioni si metterebbe in fila davanti alla richiesta di quell'operatore; con due code i due flussi hanno consumatori distinti e non si ostacolano.
-
-Il costo infrastrutturale non entra nel confronto perché SQS si tariffa sul numero di richieste e non sul numero di code: due code che smaltiscono lo stesso traffico di una costano quanto quella.
-
-=== Un archivio, non una cache
-
-Il riepilogo prodotto viene conservato su MongoDB. La differenza rispetto a una cache non è terminologica ma di comportamento, e sta in cosa accade quando il riepilogo non c'è.
-
-Una cache, non trovando il valore, lo ricalcola e lo restituisce a chi lo aveva chiesto. Applicato a questo servizio significherebbe che aprire la scheda di un'entità priva di riepilogo ne avvia la produzione: l'operatore attende alcuni secondi senza averlo chiesto, e ogni apertura di scheda genera una chiamata al modello, che è l'operazione più costosa del servizio. Peggio ancora, la richiesta esplicita di produzione perderebbe di senso, perché la semplice consultazione avrebbe già fatto tutto.
-
-Il servizio si comporta invece come un archivio: se il riepilogo non c'è, lo dichiara e si ferma. Sta alla piattaforma decidere cosa farne, e la scelta naturale è proporre all'operatore di richiederne la produzione. Il costo viene sostenuto solo quando qualcuno lo ha voluto.
-
-Questa scelta è il motivo per cui la lettura dell'archivio non appartiene al package che produce i riepiloghi ma è raggiunta direttamente dall'endpoint di consultazione, come si vedrà nella @sez:http[Sezione]. Se la consultazione passasse per il codice di produzione, la tentazione di far produrre in caso di assenza sarebbe a una riga di distanza. Tenendo separati i due percorsi la garanzia è strutturale e non affidata alla disciplina di chi scriverà il codice in seguito.
-
-=== Granularità dell'invalidazione
-
-Un'entità può avere più riepiloghi, uno per ciascun evento che li ha richiesti. Quando arriva la segnalazione che l'entità è cambiata, il servizio li cancella tutti.
-
-La segnalazione dice che l'entità è stata modificata e nulla più: non conosce l'esistenza dei riepiloghi né quali dati ciascuno di essi utilizzi. L'alternativa era dichiarare, per ogni riepilogo, da quali fonti dipende, e cancellare solo quelli effettivamente toccati. L'ho scartata perché la sua correttezza si reggerebbe su una dichiarazione mantenuta a mano: chi aggiungesse una fonte a un'interrogazione dimenticando di aggiornare la dichiarazione non provocherebbe alcun guasto visibile, e semplicemente un giorno un operatore leggerebbe un dato vecchio senza avere modo di accorgersene.
-
-Il confronto è quindi tra due errori. Cancellare troppo produce una rigenerazione superflua: rumorosa, immediatamente osservabile, innocua. Cancellare troppo poco produce un dato non aggiornato mostrato come se fosse attuale: silenzioso, invisibile e dannoso. La preferenza per il primo è netta.
-
-Il disegno su richiesta rende inoltre il costo di cancellare troppo quasi nullo. La cancellazione non rigenera nulla di per sé: il costo si materializza soltanto se qualcuno apre davvero quella scheda e chiede il riepilogo, e in quel caso lo ottiene aggiornato.
-
-Va segnalato un vincolo infrastrutturale che questa scelta comporta. SQS è punto a punto: un messaggio consegnato a un consumatore non è più disponibile per gli altri. Il servizio non può quindi mettersi in ascolto sulla coda con cui la piattaforma già distribuisce gli eventi di modifica, perché sottrarrebbe i messaggi al loro destinatario originario. Serve invece iscrivere una coda dedicata al topic SNS da cui quegli eventi provengono, così che il sistema di distribuzione ne recapiti una copia a ciascun consumatore.
-
-=== Idempotenza
-
-Elaborare due volte lo stesso messaggio non deve produrre effetti diversi dall'elaborarlo una volta sola. Non è una precauzione teorica ma la conseguenza diretta di come funziona l'infrastruttura scelta: SQS garantisce la consegna almeno una volta, il che significa che lo stesso messaggio può essere recapitato due volte anche in assenza di errori. Vi si aggiunge il fatto che la libreria di consumo interna non verifica l'esito della cancellazione del messaggio dalla coda: se quella cancellazione fallisce, il messaggio ricompare e viene rielaborato.
-
-Entrambi i comandi sono quindi costruiti perché la ripetizione sia innocua, come richiede RQA-OB\_07. La produzione controlla per prima cosa se il riepilogo esiste già e in tal caso lo restituisce senza rifarlo, evitando una seconda chiamata al modello. L'invalidazione cancella ciò che trova e considera un esito valido il non aver trovato nulla, perché l'entità poteva legittimamente non avere riepiloghi. Il codice corrispondente è mostrato nelle sezioni @sez:summary[] e @sez:store[].
-
-Si noti che il controllo iniziale della produzione ha un effetto collaterale voluto: una richiesta di produzione su un riepilogo esistente non lo rigenera. Per ottenere un riepilogo aggiornato occorre prima invalidare, che è esattamente ciò che accade quando i dati cambiano davvero.
-
-=== Robustezza degli ingressi
-
-Il servizio riceve richieste da tre canali e da sistemi che non controlla. Un messaggio malformato, un identificativo assente o un'indisponibilità temporanea del semantic layer non devono comprometterne il funzionamento, come prescrive RQA-OB\_06.
-
-Ogni richiesta viene quindi validata prima di essere elaborata: quelle prive del tenant, dell'identificativo dell'entità o dell'evento sono rifiutate subito, senza attivare il flusso e senza spendere una chiamata al modello. Il servizio prosegue nel frattempo con i messaggi successivi, e un ingresso scorretto resta un fatto locale a quel messaggio.
-
-Su questo punto il servizio presenta però una lacuna che è corretto dichiarare. Un messaggio rifiutato non viene cancellato dalla coda, perché la cancellazione avviene solo in caso di successo, e torna quindi disponibile per un nuovo tentativo. Trattandosi di un messaggio malformato il tentativo fallirà di nuovo, e il messaggio verrà ripresentato indefinitamente. Il rimedio previsto da SQS è la coda di scarto (_dead letter queue_), sulla quale i messaggi vengono spostati dopo un numero configurato di tentativi falliti, in modo da toglierli dal ciclo e conservarli per l'ispezione. Non è stata configurata nel corso dello stage, e la riprendo tra gli sviluppi futuri nel @cap:conclusioni[Capitolo].
-
-Un criterio diverso vale all'interno della produzione, sui singoli blocchi di dati. Un'interrogazione che restituisce un risultato vuoto non fa fallire nulla: il blocco arriva al modello privo di valori, e le istruzioni gli impongono di omettere ciò che manca invece di supplirvi. Se invece è il semantic layer a non rispondere, il fallimento riguarda la richiesta nel suo complesso e non un suo frammento: la produzione si interrompe, nessun riepilogo parziale viene conservato e il messaggio torna sulla coda per essere ritentato quando il sistema sarà di nuovo raggiungibile.
-
-=== Design pattern adottati
-
-Le decisioni descritte in questa sezione diventano codice attraverso tre pattern di progettazione @design-patterns, che vale la pena nominare perché sono il vocabolario con cui lo stile illustrato nella @sez:architettura[Sezione] si realizza concretamente. Discendono tutti e tre dalla stessa idea, programmare verso un'interfaccia anziché verso una realizzazione, ma rispondono a domande diverse, e tenerle distinte è ciò che evita di scambiare un pattern per l'altro.
-
-*Dependency injection.* La domanda è chi decida quale realizzazione un componente userà. Il coordinatore della produzione ha bisogno di un archivio, di un modello linguistico, di una sorgente di dati e delle impostazioni del cliente: se se li costruisse da sé dovrebbe conoscere MongoDB, OpenAI e Cube, e non sarebbe verificabile senza di essi. Li riceve invece dall'esterno al momento della costruzione, sotto forma di quattro valori che soddisfano le interfacce dichiarate.
-
-```go
-// internal/summary/summary.go
-func New(store Store, llm LLM, kpi Source,
-	tenants Tenants) *Service {
-	return &Service{store: store, llm: llm,
-		kpi: kpi, tenants: tenants}
-}
-```
-
-La scelta delle realizzazioni concrete avviene in un punto solo dell'intero programma, il composition root.
-
-```go
-// cmd/context-service/main.go
-summaries := store.New(db)
-tenants := tenant.New(db)
-kpiService := kpi.New(db, cubeClient)
-summaryService := summary.New(
-	summaries, llm, kpiService, tenants)
-```
-
-Il guadagno immediato è la verificabilità: nei test quelle stesse quattro posizioni ricevono realizzazioni finte, e il flusso di produzione si esercita per intero senza rete e senza costi. Il pattern realizza inoltre il principio di inversione delle dipendenze, perché il nucleo dipende da astrazioni che possiede e non da tipi concreti che gli sono esterni.
-
-*Repository.* La domanda è quale parte del sistema debba sapere in che modo i dati sono conservati. Il coordinatore deve poter salvare un riepilogo e rileggerlo, ma non ha ragione di sapere che quel riepilogo vive in una collection di MongoDB individuata da una coppia di campi. L'interfaccia è quindi espressa nei termini del dominio, l'entità e l'evento, e non in quelli del database.
-
-```go
-// internal/summary/summary.go
-type Store interface {
-	Get(ctx context.Context, tenantID, geocID,
-		trigger string) (string, bool, error)
-	Save(ctx context.Context, tenantID, geocID,
-		trigger, summary string) error
-}
-```
-
-Tutto ciò che è specifico di MongoDB, ovvero i filtri, l'_upsert_, l'indice unico e i limiti di tempo, resta confinato nel package `store` descritto nella @sez:store[Sezione]. Se l'archivio cambiasse tecnologia, il coordinatore non se ne accorgerebbe.
-
-*Adapter.* La domanda è come far dialogare due interfacce concepite per scopi diversi. Al servizio serve una sola operazione, produrre un testo date delle istruzioni e dei dati.
-
-```go
-// internal/summary/summary.go
-type LLM interface {
-	Complete(ctx context.Context, systemPrompt,
-		userMessage string) (string, error)
-}
-```
-
-L'SDK di OpenAI parla però un'altra lingua: chiede di comporre una struttura di parametri con il modello, la temperatura e un elenco tipizzato di messaggi distinti per ruolo, e restituisce un insieme di risposte alternative da cui estrarre la prima. Il package `openaiclient`, riportato nella @sez:clients[Sezione], è il solo punto dell'intero servizio in cui le due forme si incontrano. Cambiare fornitore significa scrivere un secondo adattatore, non modificare la logica di produzione, e lo stesso vale per gli altri tre client, verso MongoDB, Cube e AWS.
-
-Un quarto pattern compare in forma minore nei consumatori delle code: le funzioni che elaborano i messaggi non sono scritte direttamente ma prodotte da una _factory_, che riceve il componente da usare e restituisce la funzione già legata a esso, come si vedrà nella @sez:consumatori[Sezione].
-
 == Il semantic layer <sez:semantic>
 
-Il lavoro dello stage non si esaurisce nel servizio in Go. I KPI che il servizio recupera non esistono finché qualcuno non li definisce, e definirli ha occupato una parte consistente del tempo: vivono in un modello dati dichiarativo che Cube compila e traduce in SQL al momento dell'interrogazione.
+Scelto il semantic layer, restava da costruirlo. I KPI da cui nasce un riepilogo non esistono finché qualcuno non li definisce, e definirli ha occupato una parte consistente dello stage: vivono in un modello dati dichiarativo che Cube compila e traduce in SQL al momento dell'interrogazione. Questa sezione descrive quel modello, che insieme al servizio è l'altra metà di ciò che ho realizzato.
 
 === La sorgente relazionale
 
-Cube interroga PostgreSQL, dove i documenti di MongoDB arrivano in due forme. Una tabella di appoggio conserva ciascun documento intero in un campo `jsonb`; una vista materializzata ne espone in colonne i campi di uso più frequente. Ogni cubo del modello parte da una `SELECT` che unisce le due.
+Cube interroga PostgreSQL, dove i documenti di MongoDB arrivano in due forme: una tabella di appoggio conserva ciascun documento intero in un campo `jsonb`, mentre una vista materializzata ne espone in colonne i campi di uso più frequente. Ogni cubo del modello parte da una `SELECT` che unisce le due, così da disporre sia delle colonne già pronte sia del documento originale per tutto ciò che la vista non espone.
+
+Il secondo caso non è raro, perché alcune informazioni vivono in profondità dentro il documento. Un ticket, per esempio, non ha un campo con la data di chiusura: ha un elenco di transizioni di stato, e la chiusura è la prima transizione il cui tipo è `closed`.
 
 ```yaml
 # cube/model/shared/tickets_base.yml
-cubes:
-  - name: tickets_base
-    sql: >
-      SELECT
-        v.id,
-        v.priority,
-        v.status,
-        (v.date)::timestamptz AS opened_at,
-        v.ts_response         AS responded_at,
-        v."desc"              AS description,
-        s.raw
-      FROM mongo_mv_tickets v
-      JOIN mongo_staging_tickets s ON v.id = s.id
-```
-
-La vista fornisce le colonne già pronte, mentre il campo `raw` resta a disposizione per tutto ciò che la vista non espone. Il secondo caso non è raro, perché alcune informazioni vivono in profondità dentro il documento e vanno estratte una per una.
-
-```yaml
 - name: closed_at
   sql: >
     (SELECT (t.value ->> 'ts')::timestamptz
@@ -306,7 +122,7 @@ La vista fornisce le colonne già pronte, mentre il campo `raw` resta a disposiz
   type: time
 ```
 
-Un ticket non ha un campo con la data di chiusura: ha un elenco di transizioni di stato, e la chiusura è la prima transizione il cui tipo è `closed`. Ricavarla significa scorrere quell'elenco dentro il documento. È il genere di espressione che, moltiplicata per ogni campo, rendeva difficile da mantenere l'interrogazione diretta del `jsonb` discussa nella @sez:interfacciamento[Sezione]. Scritta qui, però, viene scritta una volta sola.
+È il genere di espressione che, moltiplicata per ogni campo, rendeva difficile da mantenere l'interrogazione diretta del `jsonb` discussa nella @sez:interfacciamento[Sezione]. Scritta nel modello dati viene però scritta una volta sola, e tutto ciò che ne dipende si limita a nominarla.
 
 === Dimensioni e metriche
 
@@ -331,7 +147,7 @@ measures:
       - sql: "{closed_at} IS NOT NULL"
 ```
 
-Il valore di questa forma sta nella riga `filters` di `open_tickets`. Che cosa significhi "ticket aperto" è stabilito in un punto solo, ed è un ticket privo di transizione di chiusura. Chiunque chieda `open_tickets`, il servizio di contesto oggi o una dashboard domani, riceve lo stesso numero calcolato nello stesso modo. È la ragione per cui il semantic layer è stato scelto, e qui si vede messa in pratica.
+Nell'esempio il valore di questa forma sta nella riga `filters` di `open_tickets`, e vale per qualunque metrica definita allo stesso modo. Che cosa significhi "ticket aperto" è stabilito in un punto solo, ed è un ticket privo di transizione di chiusura. Chiunque chieda `open_tickets`, il servizio di contesto oggi o una dashboard domani, riceve lo stesso numero calcolato nello stesso modo. È la ragione per cui il semantic layer è stato scelto, e qui si vede messa in pratica.
 
 Si noti anche che le definizioni si appoggiano l'una all'altra: `closed_at` è estratta dal documento, `open_tickets` la usa come filtro e `avg_resolution_days` la usa come estremo di un intervallo. La complessità dell'estrazione resta confinata in un punto e tutto il resto ne discende.
 
@@ -362,7 +178,7 @@ cubes:
 
 Questo cliente registra i livelli di rischio come testo, e per poterne calcolare il peggiore occorre prima tradurli in numeri. È una necessità sua: un altro cliente potrebbe non avere affatto i livelli di rischio, oppure misurarli su una scala diversa. È la variabilità per cliente descritta nel @cap:analisi-requisiti[Capitolo], vista dal lato della realizzazione.
 
-L'estensione spiega anche perché le interrogazioni configurate per questo cliente nominano `inspection_ferrovie` e non `inspections_base`, pur usando membri che appartengono al cubo condiviso.
+Le interrogazioni che il servizio invia a Cube non sono scritte nel codice ma configurate per ciascun cliente, secondo il meccanismo descritto nella @sez:kpi[Sezione]. L'estensione spiega perché quelle configurate per questo cliente nominano `inspection_ferrovie` e non `inspections_base`, pur usando membri che appartengono al cubo condiviso.
 
 ```json
 {
@@ -381,7 +197,7 @@ L'estensione spiega anche perché le interrogazioni configurate per questo clien
 
 === La segregazione dei dati fra clienti
 
-Il servizio firma un token JWT con l'identificativo del tenant e lo allega a ogni interrogazione. Cube lo legge dal contesto di sicurezza e, se manca, rifiuta la richiesta.
+A ogni interrogazione il servizio allega un token JWT che porta l'identificativo del tenant, firmato dal client descritto nella @sez:clients[Sezione]. Cube lo legge dal contesto di sicurezza e, se manca, rifiuta la richiesta.
 
 ```javascript
 // cube/cube.js
@@ -427,15 +243,208 @@ driverFactory: function (context) {
 }
 ```
 
-La terza riguarda le cache: `contextToAppId` distingue gli schemi compilati e `contextToOrchestratorId` separa i pool di connessioni e le pre-aggregazioni, entrambi etichettati con l'identificativo del cliente.
+La terza riguarda ciò che Cube conserva fra un'interrogazione e l'altra. Per non ricompilare il modello e non ricalcolare i risultati a ogni richiesta, Cube tiene in memoria lo schema compilato e gli esiti delle interrogazioni già eseguite. Se queste memorie fossero comuni a tutti, una richiesta di un cliente potrebbe ricevere un risultato calcolato sui dati di un altro. Le due funzioni `contextToAppId` e `contextToOrchestratorId` lo impediscono assegnando a ciascun cliente le proprie, etichettate con il suo identificativo.
 
 Ne segue che la segregazione richiesta da RQA-OB\_04 non è un filtro applicato alle interrogazioni, ma la conseguenza del fatto che due clienti non condividono nulla: né le definizioni, né la connessione, né la cache. Un'interrogazione scritta male non può raggiungere i dati di un altro cliente, perché il database in cui quei dati vivono non è nemmeno aperto. È una garanzia più solida di quella offerta da un filtro, che dipenderebbe invece dalla correttezza di chi lo scrive.
 
-Lo stesso identificativo ricorre infine in tre punti: è il nome del database MongoDB del cliente, il nome del suo database PostgreSQL e il nome della cartella dei suoi modelli. Il servizio lo riceve nel messaggio e lo propaga senza mai doverlo tradurre.
+=== Fin dove è arrivata la configurazione
+
+Il modello costruito durante lo stage copre un solo cliente e due dei tre tipi di entità della piattaforma. Per le ispezioni sono definiti l'andamento dei livelli di rischio negli anni, le non conformità rilevate e le statistiche sulle ispezioni svolte; per i ticket le statistiche complessive, l'elenco di quelli aperti e di quelli chiusi di recente con la descrizione dell'intervento eseguito. Gli asset, terzo tipo di entità, non sono stati configurati.
+
+Va sottolineato che queste metriche valgono per quel cliente e non per il sistema: un altro tenant, disponendo di dati diversi e misurando la propria operatività a modo suo, avrebbe un modello diverso a parità di codice del servizio.
+
+== Scelte di progettazione <sez:scelte>
+
+Le decisioni raccolte in questa sezione non riguardano un singolo componente ma la forma complessiva del servizio. Sono le scelte su cui mi sono confrontato più a lungo con il tutor aziendale, e per ciascuna riporto le alternative valutate e la ragione della preferenza. La prima riguarda quali operazioni il servizio debba offrire, e da essa discendono tutte le altre.
+
+=== La divisione in tre operazioni
+
+Il servizio poteva esporre una sola operazione, quella che produce il riepilogo quando qualcuno lo chiede. Ne espone invece tre, che corrispondono a tre momenti distinti nella vita di un riepilogo.
+
+La *produzione* costruisce un riepilogo. Ricevuti il tenant, l'entità e l'evento che l'ha richiesta, recupera le interrogazioni configurate per quel caso, ne ottiene i valori dal semantic layer, li affida al modello linguistico e conserva il testo ottenuto.
+
+La *consultazione* restituisce un riepilogo già prodotto, oppure segnala che non ne esiste alcuno. Non produce nulla e non ha effetti: è una sola lettura.
+
+L'*invalidazione* elimina i riepiloghi di un'entità che è stata modificata, così che smettano di essere restituiti dalla consultazione.
+
+Il fatto che la consultazione non produca mai nulla è la conseguenza più importante di questa divisione, e le sottosezioni che seguono ne discutono le implicazioni una per una. La @fig:architettura mostra il flusso completo.
+
+// sorgente del diagramma: tesi/puml/architettura.puml
+#figure(
+  caption: [Architettura del servizio e flusso delle tre operazioni.],
+  image("../images/architettura.png", width: 84%)
+)<fig:architettura>
+
+=== Comandi asincroni e letture sincrone
+
+La prima versione del servizio riceveva ogni cosa dalla coda. Era una scelta comoda in prototipazione, ma inadeguata alla consultazione: l'operatore apre una scheda e attende una risposta, mentre una coda non risponde a chi le scrive.
+
+Ho quindi separato i due canali secondo la natura delle operazioni. La produzione e l'invalidazione sono comandi: modificano lo stato, richiedono tempo, possono fallire e in tal caso vanno ritentati. Una coda offre esattamente questo, perché conserva il messaggio finché non viene elaborato con successo e assorbe i picchi di richieste senza sovraccaricare il servizio. La consultazione è invece una lettura: è veloce, non ha effetti, e chi la esegue ha bisogno della risposta immediatamente. Un endpoint HTTP sincrono risponde a questa esigenza.
+
+Resta da spiegare come la piattaforma venga a sapere che una produzione richiesta è terminata. Il servizio non la avvisa: SQS non offre al mittente alcun riscontro sull'esito dell'elaborazione, e costruire un canale di notifica dedicato avrebbe aggiunto una componente al solo scopo di comunicare un fatto già osservabile. L'interfaccia interroga periodicamente la consultazione finché il riepilogo non compare, con un limite di tempo oltre il quale segnala all'operatore che la richiesta non è andata a buon fine. Il meccanismo riusa un'operazione che esiste già ed è la più economica del servizio.
+
+=== Una coda per ciascun comando
+
+I due comandi potevano viaggiare su una sola coda, distinti da un campo del messaggio. Ho preferito due code separate.
+
+I due messaggi hanno origini e forme diverse. La richiesta di produzione è definita insieme al servizio e ne segue il formato; la segnalazione di modifica appartiene alla piattaforma, esisteva già per altri scopi e arriva incapsulata nella struttura del sistema di distribuzione. Con una coda sola il consumatore dovrebbe riconoscere il formato prima di poterlo leggere, ramificare sul tipo di comando e cercare l'identificativo del tenant in posizioni diverse a seconda dei casi: una logica di smistamento che non appartiene a nessuno dei due flussi e che va mantenuta insieme a entrambi.
+
+Anche i volumi e i costi sono asimmetrici. Un'invalidazione è una cancellazione, arriva a ogni modifica di un'entità e può presentarsi a ondate quando la piattaforma esegue aggiornamenti massivi. Una produzione comporta diverse interrogazioni e una chiamata al modello linguistico, e dietro di essa c'è un operatore che aspetta. Su una coda condivisa un'ondata di invalidazioni si metterebbe in fila davanti alla richiesta di quell'operatore; con due code i due flussi hanno consumatori distinti e non si ostacolano.
+
+Il costo infrastrutturale non entra nel confronto perché SQS si tariffa sul numero di richieste e non sul numero di code: due code che smaltiscono lo stesso traffico di una costano uguale.
+
+=== Il riepilogo assente
+
+Il riepilogo prodotto viene conservato su MongoDB, e questo pone una domanda: che cosa deve fare la consultazione quando il riepilogo richiesto non esiste.
+
+La risposta abituale per un valore conservato è quella della cache, cioè calcolarlo al momento e restituirlo a chi lo ha chiesto. Applicata qui, significherebbe che aprire la scheda di un'entità priva di riepilogo ne avvia la produzione: l'operatore attende alcuni secondi senza averlo chiesto, e ogni apertura di scheda comporta una chiamata al modello, che è l'operazione più costosa del servizio. Verrebbe inoltre meno la ragione della richiesta esplicita di produzione, perché la consultazione avrebbe già prodotto.
+
+Il servizio adotta quindi il comportamento opposto: se il riepilogo non c'è, lo dichiara e si ferma. Sta alla piattaforma decidere cosa farne, e la scelta naturale è proporre all'operatore di richiederne la produzione. Il costo viene sostenuto solo quando qualcuno lo ha voluto.
+
+Questa scelta è il motivo per cui la lettura dell'archivio non appartiene al package che produce i riepiloghi ma è raggiunta direttamente dall'endpoint di consultazione, come si vedrà nella @sez:http[Sezione]. Se la consultazione passasse per il codice di produzione, la tentazione di far produrre in caso di assenza sarebbe a una riga di distanza. Tenendo separati i due percorsi la garanzia è strutturale e non affidata alla disciplina di chi scriverà il codice in seguito.
+
+=== Granularità dell'invalidazione
+
+Un'entità può avere più riepiloghi, uno per ciascun evento che li ha richiesti. Quando arriva la segnalazione che l'entità è cambiata, il servizio li cancella tutti.
+
+La segnalazione dice che l'entità è stata modificata e nulla più: non conosce l'esistenza dei riepiloghi né quali dati ciascuno di essi utilizzi. L'alternativa era dichiarare, per ogni riepilogo, da quali fonti dipende, e cancellare solo quelli effettivamente toccati. L'ho scartata perché la sua correttezza si reggerebbe su una dichiarazione mantenuta a mano: chi aggiungesse una fonte a un'interrogazione dimenticando di aggiornare la dichiarazione non provocherebbe alcun guasto visibile, e semplicemente un giorno un operatore leggerebbe un dato vecchio senza avere modo di accorgersene.
+
+Il confronto è quindi tra due errori. Cancellare più del necessario comporta la riproduzione di un riepilogo che era ancora valido, e l'errore si esaurisce lì. Cancellare meno del necessario lascia in circolazione un testo non aggiornato che viene mostrato come se fosse attuale, e questo l'operatore non ha modo di rilevarlo.
+
+Il primo errore costa inoltre poco. La cancellazione di per sé non riproduce nulla: il costo si presenta solo se qualcuno apre davvero quella scheda e richiede il riepilogo, e in quel caso lo ottiene aggiornato.
+
+Va segnalato un vincolo infrastrutturale che questa scelta comporta. SQS è punto a punto: un messaggio consegnato a un consumatore non è più disponibile per gli altri. Il servizio non può quindi mettersi in ascolto sulla coda con cui la piattaforma già distribuisce gli eventi di modifica, perché sottrarrebbe i messaggi al loro destinatario originario. Serve invece iscrivere una coda dedicata al topic SNS da cui quegli eventi provengono, così che il sistema di distribuzione ne recapiti una copia a ciascun consumatore.
+
+=== Idempotenza
+
+Elaborare due volte lo stesso messaggio non deve produrre effetti diversi dall'elaborarlo una volta sola. Non è una precauzione teorica ma la conseguenza diretta di come funziona l'infrastruttura scelta: SQS garantisce la consegna almeno una volta, il che significa che lo stesso messaggio può essere recapitato due volte anche in assenza di errori. Vi si aggiunge il fatto che la libreria di consumo interna non verifica l'esito della cancellazione del messaggio dalla coda: se quella cancellazione fallisce, il messaggio ricompare e viene rielaborato.
+
+Entrambi i comandi sono quindi costruiti perché la ripetizione sia innocua, come richiede RQA-OB\_07. La produzione controlla per prima cosa se il riepilogo esiste già e in tal caso lo restituisce senza rifarlo, evitando una seconda chiamata al modello. L'invalidazione cancella ciò che trova e considera un esito valido il non aver trovato nulla, perché l'entità poteva legittimamente non avere riepiloghi. Il codice corrispondente è mostrato nelle sezioni @sez:summary[] e @sez:store[].
+
+Si noti che il controllo iniziale della produzione ha un effetto collaterale voluto: una richiesta di produzione su un riepilogo esistente non lo rigenera. Per ottenere un riepilogo aggiornato occorre prima invalidare, che è esattamente ciò che accade quando i dati cambiano davvero.
+
+=== Robustezza degli ingressi
+
+Il servizio riceve richieste da tre canali e da sistemi che non controlla. Un messaggio malformato, un identificativo assente o un'indisponibilità temporanea del semantic layer non devono comprometterne il funzionamento, come prescrive RQA-OB\_06.
+
+Ogni richiesta viene quindi validata prima di essere elaborata: quelle prive del tenant, dell'identificativo dell'entità o dell'evento sono rifiutate subito, senza attivare il flusso e senza spendere una chiamata al modello. Il servizio prosegue nel frattempo con i messaggi successivi, e un ingresso scorretto resta un fatto locale a quel messaggio.
+
+Su questo punto il servizio presenta una lacuna. Un messaggio rifiutato non viene cancellato dalla coda, perché la cancellazione avviene solo in caso di successo, e torna quindi disponibile per un nuovo tentativo. Trattandosi di un messaggio malformato il tentativo fallirà di nuovo, e il messaggio verrà ripresentato indefinitamente. Il rimedio previsto da SQS è la coda di scarto (_dead letter queue_), sulla quale i messaggi vengono spostati dopo un numero configurato di tentativi falliti, in modo da toglierli dal ciclo e conservarli per l'ispezione. Non è stata configurata nel corso dello stage, e la riprendo tra gli sviluppi futuri nel @cap:conclusioni[Capitolo].
+
+Un criterio diverso vale all'interno della produzione, sui singoli blocchi di dati. Un'interrogazione che restituisce un risultato vuoto non fa fallire nulla: il blocco arriva al modello privo di valori, e le istruzioni gli impongono di omettere ciò che manca invece di inventarlo. Se invece è il semantic layer a non rispondere, il fallimento riguarda la richiesta nel suo complesso e non un suo frammento: la produzione si interrompe, nessun riepilogo parziale viene conservato e il messaggio torna sulla coda per essere ritentato quando il sistema sarà di nuovo raggiungibile.
+
+== Architettura e struttura del codice <sez:architettura>
+
+Le decisioni appena esposte hanno dato al servizio una forma precisa. Questa sezione la descrive su tre piani: lo stile con cui il servizio si inserisce nella piattaforma e si organizza al proprio interno, la disposizione dei package che ne discende, e i pattern di progettazione con cui quello stile diventa codice.
+
+=== Stile architetturale
+
+Il servizio non viene invocato: resta in ascolto e reagisce a ciò che gli altri componenti della piattaforma producono. L'integrazione avviene per *scambio di messaggi asincroni*, e i due canali di ingresso portano messaggi di natura diversa. Sulla coda di produzione arrivano comandi, cioè richieste rivolte al servizio perché compia un'operazione. Sul canale di invalidazione arrivano notifiche di eventi: la piattaforma dichiara che un'entità è stata modificata, senza stabilire che cosa se ne debba fare, e la distribuzione avviene in _publish-subscribe_ attraverso un topic al quale più consumatori possono iscriversi @integration-patterns. È questa seconda forma a rendere il servizio autonomo nel mantenere validi i propri riepiloghi. Alle due code si affianca il canale sincrono della consultazione, riservato alle letture.
+
+All'interno, il servizio segue lo stile *ports and adapters*, noto anche come architettura esagonale @hexagonal-architecture. Il nucleo applicativo è il package `summary`, che non conosce alcun sistema esterno: dichiara le interfacce di ciò che gli occorre, e quelle interfacce sono le porte. Le realizzazioni concrete stanno fuori e ne sono gli adattatori: l'archivio su MongoDB, il servizio che recupera i KPI, il client del modello linguistico, il lettore delle impostazioni del cliente. Lo stesso criterio si ripete un livello più sotto, perché anche il servizio dei KPI dichiara a sua volta l'interfaccia del semantic layer di cui ha bisogno. Dal lato opposto stanno gli adattatori in ingresso, cioè i due consumatori di coda e il gestore dell'endpoint HTTP, la funzione che riceve la richiesta di consultazione e vi risponde. A collegare le due sponde è il _composition root_, l'unico luogo del programma che conosce insieme le porte e gli adattatori.
+
+Ciò che tiene insieme questa struttura è la direzione delle dipendenze, che puntano tutte verso il nucleo: è la persistenza a dipendere dall'interfaccia dichiarata dal dominio, non il dominio a dipendere da MongoDB. Da qui discendono due proprietà concrete. Sostituire l'archivio o il fornitore del modello linguistico non tocca la logica di produzione, perché il nucleo continua a vedere la stessa porta. E nei test quelle stesse porte accolgono realizzazioni finte, così il flusso si esercita per intero senza rete e senza costi.
+
+Da questo schema il servizio si discosta in un punto, deliberatamente: la consultazione non attraversa il nucleo, perché quel gestore legge l'archivio direttamente. È la scelta che le impedisce di produrre riepiloghi, per le ragioni esposte nella @sez:scelte[Sezione].
+
+=== Organizzazione del codice
+
+Il servizio è scritto in Go e segue l'organizzazione convenzionale del linguaggio, che distingue il codice eseguibile dai package di libreria. Sotto `cmd` risiede il punto di ingresso, che legge la configurazione, apre le connessioni verso i sistemi esterni, costruisce i componenti e avvia i tre ascoltatori. Sotto `internal` risiedono i package applicativi, ciascuno con una responsabilità circoscritta.
+
+#figure(
+  caption: [I package del servizio e le dipendenze tra essi.],
+  image("../images/pacchetti.png", width: 88%)
+)<fig:pacchetti>
+
+/ `summary`: coordina la produzione di un riepilogo, dalla raccolta dei dati alla chiamata al modello;
+/ `kpi`: recupera le interrogazioni configurate per il tenant e l'evento, le esegue sul semantic layer e ne restituisce i risultati;
+/ `store`: conserva, restituisce e cancella i riepiloghi prodotti;
+/ `tenant`: legge le impostazioni del cliente che influenzano il contenuto del riepilogo;
+/ `clients`: contiene gli adattatori verso i sistemi esterni, ovvero MongoDB, Cube, OpenAI e AWS;
+/ `config`: raccoglie e valida la configurazione da file e variabili d'ambiente.
+
+Come mostra la @fig:pacchetti, le frecce delle dipendenze puntano tutte dall'alto verso il basso: il punto di ingresso conosce ogni package, mentre i package applicativi non si conoscono tra loro e nessuno di essi importa gli altri. Il criterio che rende possibile questa struttura è che le dipendenze sono dichiarate da chi le usa e non da chi le fornisce, ed è approfondito nella @sez:summary[Sezione].
+
+=== Design pattern adottati <sez:pattern>
+
+Lo stile descritto sopra si realizza nel codice attraverso tre pattern di progettazione @design-patterns. Tutti e tre applicano lo stesso principio, programmare verso un'interfaccia anziché verso una realizzazione, ma rispondono a domande distinte.
+
+*Dependency injection.* La domanda è chi decida quale realizzazione un componente userà. Il coordinatore della produzione ha bisogno di un archivio, di un modello linguistico, di una sorgente di dati e delle impostazioni del cliente: se se li costruisse da sé dovrebbe conoscere MongoDB, OpenAI e Cube, e non sarebbe verificabile senza di essi. Li riceve invece dall'esterno al momento della costruzione, sotto forma di quattro valori che soddisfano le interfacce dichiarate.
+
+```go
+// internal/summary/summary.go
+func New(store Store, llm LLM, kpi Source,
+	tenants Tenants) *Service {
+	return &Service{store: store, llm: llm,
+		kpi: kpi, tenants: tenants}
+}
+```
+
+La scelta delle realizzazioni concrete avviene in un punto solo dell'intero programma, il composition root.
+
+```go
+// cmd/context-service/main.go
+summaries := store.New(db)
+tenants := tenant.New(db)
+kpiService := kpi.New(db, cubeClient)
+summaryService := summary.New(
+	summaries, llm, kpiService, tenants)
+```
+
+Il guadagno immediato è la verificabilità: nei test quelle stesse quattro posizioni ricevono realizzazioni finte, e il flusso di produzione si esercita per intero senza rete e senza costi. Il pattern realizza inoltre il principio di inversione delle dipendenze, perché il nucleo dipende da astrazioni che possiede e non da tipi concreti che gli sono esterni.
+
+*Repository.* La domanda è quale parte del sistema debba sapere in che modo i dati sono conservati. Il coordinatore deve poter salvare un riepilogo e rileggerlo, ma non ha ragione di sapere che quel riepilogo vive in una collection di MongoDB individuata da una coppia di campi. L'interfaccia è quindi espressa nei termini del dominio, l'entità e l'evento, e non in quelli del database.
+
+```go
+// internal/summary/summary.go
+type Store interface {
+	Get(ctx context.Context, tenantID, geocID,
+		trigger string) (string, bool, error)
+	Save(ctx context.Context, tenantID, geocID,
+		trigger, summary string) error
+}
+```
+
+Tutto ciò che è specifico di MongoDB, ovvero i filtri, l'_upsert_, l'indice unico e i limiti di tempo, resta confinato nel package `store` descritto nella @sez:store[Sezione]. Se l'archivio cambiasse tecnologia, il coordinatore non se ne accorgerebbe.
+
+*Adapter.* La domanda è come far dialogare due interfacce concepite per scopi diversi. Al servizio serve una sola operazione, con due stringhe in ingresso e una in uscita. L'SDK di OpenAI ne espone un'altra: richiede una struttura di parametri con il modello e la temperatura, un elenco tipizzato di messaggi distinti per ruolo, e restituisce un insieme di risposte alternative fra cui scegliere. Le due forme sono incompatibili, e il package `openaiclient` è il punto in cui una viene tradotta nell'altra.
+
+```go
+// quello che serve al servizio
+// internal/summary/summary.go
+type LLM interface {
+	Complete(ctx context.Context, systemPrompt,
+		userMessage string) (string, error)
+}
+```
+
+```go
+// la traduzione verso l'SDK
+// internal/clients/openaiclient/openaiclient.go
+func (c *Client) Complete(ctx context.Context,
+	systemPrompt, userMessage string) (string, error) {
+	...
+	resp, err := c.api.Chat.Completions.New(ctx,
+		openai.ChatCompletionNewParams{
+			Model:       openai.ChatModel(c.model),
+			Temperature: openai.Float(0.2),
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.SystemMessage(systemPrompt),
+				openai.UserMessage(userMessage),
+			},
+		})
+	...
+	return resp.Choices[0].Message.Content, nil
+}
+```
+
+Le due stringhe che il servizio passa diventano i due messaggi che l'SDK richiede, e la prima delle risposte alternative torna indietro come stringa. Il vocabolario dell'SDK non compare in nessun altro file del servizio: cambiare fornitore significa scrivere un secondo adattatore, non modificare la logica di produzione. Lo stesso vale per i client verso MongoDB, Cube e AWS.
 
 == Sviluppo dei componenti
 
-La @fig:sequenza segue una richiesta di produzione dal messaggio in coda fino al riepilogo conservato, e mostra in quale ordine i componenti entrano in gioco.
+Resta da vedere il codice. Le sottosezioni che seguono attraversano i package nell'ordine in cui il flusso di produzione li incontra, e mostrano come le decisioni della @sez:scelte[Sezione] siano state realizzate.
+
+La @fig:sequenza segue una richiesta di produzione dal messaggio in coda fino al riepilogo conservato, e mostra in quale ordine i componenti entrano in gioco. Il riquadro contrassegnato da `alt` racchiude due decorsi alternativi, quello in cui il riepilogo esiste già e quello in cui va prodotto; il riquadro `loop` indica un passo ripetuto.
 
 // sorgente del diagramma: tesi/puml/sequenza-produzione.puml
 #figure(
@@ -445,11 +454,11 @@ La @fig:sequenza segue una richiesta di produzione dal messaggio in coda fino al
 
 Il consumatore valida il messaggio e chiama il coordinatore, che per prima cosa interroga l'archivio: se il riepilogo esiste già lo restituisce e il flusso finisce lì, senza spendere nulla. Altrimenti legge lingua e fuso del cliente, chiede i dati al servizio dei KPI, che esegue in parallelo le interrogazioni configurate per quell'evento, riunisce i risultati in un unico payload, lo affida al modello linguistico e conserva il testo ottenuto.
 
-Le sezioni che seguono percorrono lo stesso tragitto: prima il coordinatore, poi le parti che utilizza, infine il punto di ingresso che collega tutto e gli ascoltatori sui tre canali. Gli estratti di codice provengono dai file effettivi del servizio, con i commenti presenti nel codice; alcune righe sono spezzate per adattarle alla pagina.
+Le sezioni che seguono percorrono lo stesso tragitto e mostrano il codice con cui le decisioni della @sez:scelte[Sezione] sono state realizzate: sono quindi un secondo passaggio sulle stesse scelte, questa volta dal lato dell'implementazione. Gli estratti provengono dai file effettivi del servizio; alcune righe sono spezzate per adattarle alla pagina e le porzioni non rilevanti sono sostituite da puntini.
 
-=== Il coordinatore della produzione <sez:summary>
+=== `summary` — Il coordinatore della produzione <sez:summary>
 
-Il package `summary` contiene la logica centrale del servizio: dato un tenant, un'entità e un evento, produrre il riepilogo. Per farlo ha bisogno di quattro collaborazioni esterne: una sorgente di dati, un modello linguistico, un archivio in cui salvare e le impostazioni del cliente. La decisione strutturale più importante del package è che nessuna di queste collaborazioni è un riferimento concreto: sono quattro interfacce, dichiarate dal package stesso.
+Il package `summary` contiene la logica centrale del servizio: a partire da un tenant, un'entità e un evento, produce il riepilogo. Per farlo ha bisogno di quattro collaborazioni esterne: una sorgente di dati, un modello linguistico, un archivio in cui salvare e le impostazioni del cliente. La decisione strutturale più importante del package è che nessuna di queste collaborazioni è un riferimento concreto: sono quattro interfacce, dichiarate dal package stesso.
 
 ```go
 // internal/summary/summary.go
@@ -459,15 +468,11 @@ type Source interface {
 		trigger, timezone string) (map[string]any, error)
 }
 
-// quello che ci serve dall'llm; interfaccia definita
-// qui così nei test si può passare una versione finta
 type LLM interface {
 	Complete(ctx context.Context, systemPrompt,
 		userMessage string) (string, error)
 }
 
-// quello che ci serve dall'archivio; la generazione
-// non sa che dietro c'è mongo
 type Store interface {
 	Get(ctx context.Context, tenantID, geocID,
 		trigger string) (string, bool, error)
@@ -475,7 +480,6 @@ type Store interface {
 		trigger, summary string) error
 }
 
-// lingua e fuso del tenant, che cambiano il riepilogo
 type Tenants interface {
 	Get(ctx context.Context,
 		tenantID string) (language, timezone string, err error)
@@ -499,7 +503,7 @@ In Go le interfacce sono soddisfatte implicitamente: un tipo le realizza per il 
 
 Questa impostazione ha due effetti pratici. Il primo è che `summary` non sa che i riepiloghi finiscono su MongoDB né che il modello è quello di OpenAI: sostituire l'uno o l'altro non tocca la logica di produzione. Il secondo riguarda i test, ed è quello che ha inciso di più: fornendo realizzazioni finte delle quattro interfacce, il flusso di produzione si verifica per intero senza chiamare il modello linguistico, quindi senza costi e in modo ripetibile, come descritto nel @cap:verifica[Capitolo].
 
-Il metodo `Produce` percorre l'intero flusso, e lo riporto integralmente perché è il cuore del servizio.
+Il metodo `Produce` percorre l'intero flusso, e lo riporto integralmente perché è il cuore del servizio. I commenti segnano i punti in cui una decisione della @sez:scelte[Sezione] diventa codice.
 
 ```go
 // internal/summary/summary.go
@@ -508,8 +512,7 @@ func (s *Service) Produce(ctx context.Context,
 	tenantID, geocID, trigger string) (string, error) {
 
 	// se la sintesi c'è già non la rifacciamo: sqs può
-	// consegnare due volte lo stesso messaggio e l'llm
-	// è la cosa più cara che facciamo
+	// consegnare due volte lo stesso messaggio (idempotenza)
 	summary, found, err := s.store.Get(ctx, tenantID,
 		geocID, trigger)
 	if err != nil {
@@ -525,9 +528,9 @@ func (s *Service) Produce(ctx context.Context,
 		return "", fmt.Errorf("tenant settings: %w", err)
 	}
 
-	// ogni servizio produce i suoi blocchi; li fondiamo
+	// ogni sorgente produce i suoi blocchi; li fondiamo
 	// in un'unica mappa così l'llm viene chiamato una
-	// volta sola con tutto il contesto
+	// volta sola, con tutto il contesto davanti
 	data := map[string]any{}
 	for _, src := range s.sourcesFor(trigger) {
 		blocks, err := src.Blocks(ctx, tenantID, geocID,
@@ -554,8 +557,8 @@ func (s *Service) Produce(ctx context.Context,
 			"generating summary: %w", err)
 	}
 
-	// se il salvataggio fallisce restituiamo comunque
-	// il riepilogo
+	// se il salvataggio fallisce segnaliamo l'errore 
+	// ma restituiamo comunque il riepilogo
 	if err := s.store.Save(ctx, tenantID, geocID,
 		trigger, summary); err != nil {
 		fmt.Fprintln(os.Stderr, "saving summary:", err)
@@ -564,31 +567,21 @@ func (s *Service) Produce(ctx context.Context,
 }
 ```
 
-Quattro punti del metodo meritano un commento.
-
-Il controllo iniziale sull'archivio realizza l'idempotenza della produzione discussa nella @sez:scelte[Sezione]: una consegna ripetuta dello stesso messaggio trova il riepilogo già salvato e non paga una seconda chiamata al modello.
-
-Le sorgenti vengono richieste a `sourcesFor`, che oggi restituisce la sola sorgente dei KPI ma esiste come elenco proprio in previsione della sorgente documentale discussa nello studio degli approcci: aggiungerla significherà aggiungere un elemento a questa lista, senza toccare il flusso.
+Il ciclo `for` che raccoglie i dati è già pronto per l'estensione futura. Oggi raccoglie da una sola sorgente (i KPI), iterando sul risultato di `sourcesFor()`, ma domani basterà aggiungere una seconda fonte allo slice restituito senza modificare il resto della logica.
 
 ```go
-// smistamento deterministico: dato il trigger,
-// la lista di servizi da attivare
 func (s *Service) sourcesFor(trigger string) []Source {
 	return []Source{s.kpi}
 }
 ```
 
-I blocchi di tutte le sorgenti confluiscono in un'unica struttura JSON e la chiamata al modello è una sola, con tutto il contesto: chiamarlo una volta per blocco avrebbe prodotto testi indipendenti da ricucire, mentre il riepilogo deve leggersi come un discorso unico.
-
-Infine, un fallimento del salvataggio non fa fallire la produzione: il lavoro costoso è già stato fatto, e perdere il testo per un problema di scrittura sarebbe uno spreco senza contropartita. L'errore viene segnalato e il riepilogo restituito comunque.
+Il parametro `trigger` è oggi ignorato, perché tutti gli eventi attivano la stessa sorgente. È dichiarato ugualmente perché è la naturale sede della decisione futura: se un giorno l'apertura di un ticket dovesse consultare i documenti e il completamento di un'ispezione no, la differenza si esprimerebbe qui con una logica condizionale su `trigger`.
 
 Le istruzioni per il modello risiedono nello stesso package. Il messaggio di sistema è fisso e ne varia soltanto la lingua, letta dalle impostazioni del tenant come richiede RQA-OB\_02:
 
 ```go
 // internal/summary/prompt.go
 
-// stesso meccanismo di {{GEOC_ID}} nelle query:
-// sostituzione letterale, nessun carattere speciale
 const promptTemplate = `
 You are a technical analyst. You receive (as JSON)
 an asset with one or more data blocks: each block
@@ -600,19 +593,17 @@ and relying EXCLUSIVELY on the data provided.
 [...]
 `
 
-// istruzioni fisse per l'llm; la lingua è quella
-// impostata dal tenant
 func systemPrompt(language string) string {
 	return strings.ReplaceAll(promptTemplate,
 		"{{LANGUAGE}}", language)
 }
 ```
 
-La sostituzione della lingua è volutamente letterale, con `strings.ReplaceAll` anziché con la formattazione di stringhe del linguaggio: il testo delle istruzioni contiene caratteri, come il segno di percentuale, che una funzione di formattazione interpreterebbe come segnaposto, corrompendo silenziosamente il prompt. Le regole omesse nell'estratto impongono al modello di attenersi ai soli dati presenti, omettere quanto manca invece di supplirvi, non riportare codici identificativi, esplicitare sempre le date e rispettare il limite di lunghezza richiesto da RQA-DE\_02.
+La selezione della lingua avviene con `strings.ReplaceAll` anziché con la formattazione di stringhe del linguaggio, perché il testo delle istruzioni contiene caratteri come il segno di percentuale, che una funzione di formattazione interpreterebbe come segnaposto corrompendo il prompt senza segnalarlo. Le regole omesse nell'estratto impongono al modello di attenersi ai soli dati presenti, omettere quanto manca invece di inventarlo, non riportare codici identificativi, esplicitare sempre le date e rispettare il limite di lunghezza richiesto da RQA-DE\_02.
 
-=== L'estrazione dei KPI
+=== `kpi` — L'estrazione dei dati <sez:kpi>
 
-Il package `kpi` realizza l'interfaccia `Source` ed è responsabile di trasformare un evento in un insieme di blocchi di dati. Quali dati compongano il riepilogo non è scritto nel codice: ogni tenant possiede nel proprio database una collection `kpi_query`, in cui ciascun documento descrive un blocco. Questo è un esempio reale, abbreviato nei campi testuali:
+Il package `kpi` realizza l'interfaccia `Source` ed è responsabile di trasformare un evento in un insieme di blocchi di dati. Quali dati compongano il riepilogo non è scritto nel codice: ogni tenant possiede nel proprio database una collection `kpi_query`, in cui ciascun documento descrive un blocco. Ecco un esempio:
 
 ```json
 {
@@ -639,39 +630,18 @@ Il package `kpi` realizza l'interfaccia `Source` ed è responsabile di trasforma
 }
 ```
 
-Il campo `triggers` elenca gli eventi per i quali il blocco è pertinente, ed è ciò che realizza la differenziazione richiesta da RF-OB\_03; il campo `instructions` accompagna i valori fino al modello e gli dice come leggerli; il campo `query` è l'interrogazione per il semantic layer, con il segnaposto `{{GEOC_ID}}` al posto dell'entità. La selezione dei blocchi è un'unica interrogazione su MongoDB:
+Il campo `triggers` elenca gli eventi per i quali il blocco è pertinente, ed è ciò che realizza la differenziazione richiesta da RF-OB\_03; il campo `instructions` accompagna i valori fino al modello e gli dice come leggerli; il campo `query` è l'interrogazione per il semantic layer, dove il segnaposto `{{GEOC_ID}}` prende il posto dell'entità. `geoc_id` è il nome con cui la piattaforma identifica l'oggetto a cui il riepilogo si riferisce, e il servizio lo riceve nel messaggio che gli chiede la produzione. Selezionare i blocchi da comporre è quindi un'unica interrogazione su MongoDB, con un filtro:
 
 ```go
 // internal/kpi/kpi.go
 
-type QueryDoc struct {
-	Name         string `bson:"name"`
-	Instructions string `bson:"instructions"`
-	Query        bson.M `bson:"query"`
-}
-
-func (s *Service) getQueries(ctx context.Context,
-	tenantID, trigger string) ([]QueryDoc, error) {
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// matcha i documenti il cui array triggers
-	// contiene il trigger della richiesta
-	filter := bson.M{"triggers": trigger}
-
-	coll := s.db.Database(tenantID).
-		Collection("kpi_query")
-	cur, err := coll.Find(ctx, filter)
-	...
-}
+// match dei documenti il cui array contiene il trigger della richiesta
+filter := bson.M{"triggers": trigger}
 ```
 
-Ne discende la proprietà espressa da RQA-DE\_01: aggiungere un blocco a un riepilogo, modificarne il taglio espositivo o abilitare un nuovo tipo di entità sono operazioni di configurazione, senza interventi sul codice. Non è una proprietà rimasta sulla carta: il secondo scenario realizzato, il riepilogo per i ticket, è stato aggiunto a servizio già funzionante e non ha richiesto alcuna modifica al codice, soltanto nuovi documenti in questa collection e nuove metriche nel semantic layer.
+Ne discende la proprietà espressa da RQA-DE\_01: aggiungere un blocco a un riepilogo, modificarne il taglio espositivo o abilitare un nuovo tipo di entità sono operazioni di configurazione, senza interventi sul codice. Il riepilogo dei ticket, aggiunto dopo quello delle ispezioni, è stato configurato senza toccare una riga di Go.
 
-La configurazione allestita durante lo stage riguarda un solo cliente e due dei tre tipi di entità della piattaforma. Il riepilogo di un'ispezione compone l'andamento dei livelli di rischio negli anni, le non conformità rilevate e le statistiche sulle ispezioni svolte; quello di un ticket compone le statistiche sui ticket dell'asset, l'elenco dei ticket aperti e di quelli chiusi di recente, con la descrizione dell'intervento eseguito. Gli asset, terzo tipo di entità, non sono stati configurati: per quanto appena detto non richiederebbe sviluppo, ma soltanto nuove metriche nel semantic layer e nuovi documenti in questa collection. Va sottolineato che i blocchi qui elencati valgono per quel cliente e non per il sistema: un altro tenant, disponendo di dati diversi, avrebbe una configurazione diversa a parità di codice.
-
-Le interrogazioni selezionate sono indipendenti tra loro e vengono eseguite in parallelo, una goroutine ciascuna:
+Le interrogazioni selezionate sono indipendenti tra loro e vengono eseguite in parallelo sfruttando le goroutine:
 
 ```go
 // internal/kpi/kpi.go
@@ -686,9 +656,6 @@ func (s *Service) runQueries(ctx context.Context,
 	var firstError error
 
 	for _, q := range queries {
-		// senza questo campo cube calcola periodi e
-		// granularità in utc, spostando le date viste
-		// dall'operatore
 		if timezone != "" {
 			q.Query["timezone"] = timezone
 		}
@@ -733,64 +700,18 @@ La latenza complessiva del recupero è quella dell'interrogazione più lenta e n
 
 Il frammento mostra anche il trattamento del fuso orario richiesto da RQA-OB\_03. Cube calcola i periodi e le granularità temporali in UTC quando non gli viene indicato diversamente: un'ispezione registrata alle prime ore del mattino in Italia ricadrebbe nel giorno precedente, e il riepilogo riporterebbe una data diversa da quella che l'operatore legge sulla scheda. Il fuso configurato dal tenant viene quindi aggiunto a ogni interrogazione; se il tenant non lo imposta, il campo non compare e resta il comportamento predefinito di Cube.
 
-=== L'archivio dei riepiloghi <sez:store>
+=== `store` — L'archivio dei riepiloghi <sez:store>
 
-Il package `store` gestisce la collection `ai_summaries` presente nel database di ciascun tenant, dove ogni riepilogo è identificato dalla coppia entità-evento. Espone tre operazioni, una per ciascun momento della vita del riepilogo. La lettura distingue l'assenza dall'errore, perché per questo servizio l'assenza è una risposta e non un guasto:
+Il package `store` gestisce la collection `ai_summaries` presente nel database di ciascun tenant, dove ogni riepilogo è identificato dalla coppia entità-evento, e offre le tre operazioni corrispondenti ai tre momenti della sua vita.
 
-```go
-// internal/store/store.go
+La lettura distingue l'assenza dall'errore, restituendo un valore che dice se il riepilogo è stato trovato: per questo servizio l'assenza è una risposta e non un guasto. Il salvataggio è un _upsert_, quindi aggiorna il documento se esiste e lo crea altrimenti, appoggiandosi a un indice unico su entità ed evento che esclude i duplicati anche se due produzioni della stessa sintesi si concludessero insieme.
 
-// legge la sintesi salvata per (geoc_id, trigger);
-// trovato=false se non c'è
-func (s *Store) Get(ctx context.Context, tenantID,
-	geocID, trigger string) (string, bool, error) {
-	...
-	err := s.summaries(tenantID).
-		FindOne(ctx, bson.M{
-			"geoc_id": geocID, "trigger": trigger,
-		}).
-		Decode(&d)
-	// nessuna sintesi per questa entità
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	return d.AiSummary, true, nil
-}
-```
-
-Il salvataggio è un _upsert_: se un documento per la coppia esiste viene aggiornato, altrimenti viene creato. L'operazione si appoggia a un indice unico su entità ed evento, che garantisce l'assenza di duplicati anche se due produzioni della stessa sintesi si concludessero insieme:
+La cancellazione è l'unica delle tre che merita di essere vista, perché contiene al suo interno una scelta descritta nella @sez:scelte[Sezione]:
 
 ```go
 // internal/store/store.go
 
-// upsert della sintesi per (geoc_id, trigger)
-func (s *Store) Save(ctx context.Context, tenantID,
-	geocID, trigger, summary string) error {
-	...
-	_, err := s.summaries(tenantID).UpdateOne(ctx,
-		bson.M{"geoc_id": geocID, "trigger": trigger},
-		bson.M{"$set": bson.M{
-			"ai_summary": summary,
-			"updated_at": time.Now(),
-		}},
-		options.Update().SetUpsert(true),
-	)
-	...
-}
-```
-
-La cancellazione realizza la granularità scelta nella @sez:scelte[Sezione]: elimina tutti i riepiloghi dell'entità, qualunque sia l'evento che li ha generati, e non considera un errore il non trovarne alcuno:
-
-```go
-// internal/store/store.go
-
-// cancella tutte le sintesi dell'entità, non solo
-// quelle di un trigger. chi segnala l'aggiornamento
-// sa che l'entità è cambiata, non quali sintesi
-// ne dipendono
+// cancella tutte le sintesi dell'entità a prescindere dal trigger
 func (s *Store) Delete(ctx context.Context,
 	tenantID, geocID string) (int64, error) {
 	...
@@ -799,21 +720,24 @@ func (s *Store) Delete(ctx context.Context,
 	if err != nil {
 		return 0, fmt.Errorf("delete: %w", err)
 	}
-	// zero non è un errore, l'entità poteva
-	// non avere sintesi
+	
 	return res.DeletedCount, nil
 }
 ```
 
-=== Le impostazioni del cliente
+Il filtro contiene il solo `geoc_id`, quindi la cancellazione riguarda i riepiloghi di tutti gli eventi dell'entità. Il conteggio restituito può essere zero senza che questo costituisca un errore: l'entità poteva non avere alcun riepilogo, ed è il caso normale quando la stessa segnalazione arriva due volte.
 
-Il package `tenant` legge dalla collection `mytenant` del database del cliente le due impostazioni che condizionano il riepilogo: la lingua e il fuso orario. Due dettagli del codice derivano dall'osservazione dei dati reali. Il primo è che la collection contiene anche un documento di soli contatori, per cui la ricerca filtra sul campo della lingua anziché prendere il primo documento disponibile. Il secondo è che la piattaforma registra la lingua come sigla, mentre al prompt serve il nome esteso: la conversione passa da una mappa delle lingue gestite, e qualunque valore non riconosciuto ricade sull'inglese, così che un dato mancante o imprevisto non blocchi mai la produzione.
+=== `tenant` — Le impostazioni del cliente
+
+Il package `tenant` legge dalla collection `mytenant` le due impostazioni che condizionano il riepilogo, la lingua e il fuso orario.
+
+Quella collection replica una collection omonima che la piattaforma possiede già nel proprio database, e da cui i valori sono stati copiati. La prima soluzione tentata era infatti leggerli direttamente da lì, ma avrebbe richiesto al servizio una seconda connessione verso un altro database, con le credenziali e la configurazione che ne conseguono. Trattandosi di due valori che cambiano di rado, si è preferito replicarli accanto alle altre collection di configurazione, rimandando al momento dell'integrazione in produzione la scelta di attingere alla sorgente originale.
+
+Questa provenienza spiega due dettagli del codice che altrimenti sembrerebbero superflui. La ricerca filtra sul campo della lingua invece di prendere il primo documento disponibile, perché la collection della piattaforma distribuisce le proprie informazioni su più documenti e solo uno contiene le impostazioni cercate. E la sigla della lingua viene tradotta nel nome esteso da una mappa interna, invece di essere già scritta per esteso nei dati, perché è nella forma abbreviata che la piattaforma la registra. Entrambe le scelte servono a far sì che, il giorno in cui la sorgente tornasse a essere la collection originale, sia sufficiente cambiare il database interrogato. Qualunque sigla non riconosciuta ricade sull'inglese, così che un dato mancante o imprevisto non blocchi mai la produzione.
 
 ```go
 // internal/tenant/tenant.go
 
-// le lingue gestite dalla piattaforma; una sigla
-// che non è qui ricade sul default
 var languages = map[string]string{
 	"it": "Italian",
 	"en": "English",
@@ -826,23 +750,16 @@ var languages = map[string]string{
 
 const defaultLanguage = "English"
 
-// legge dalla collection mytenant la lingua, già estesa
-// e pronta per il prompt, e il fuso in formato iana,
-// vuoto se il tenant non lo imposta
 func (r *Reader) Get(ctx context.Context,
 	tenantID string) (language, timezone string, err error) {
 	...
 	var d settingsDoc
-	// nella collection c'è anche un documento di soli
-	// contatori: cerchiamo quello che ha la lingua
 	err = r.db.Database(tenantID).
 		Collection("mytenant").
 		FindOne(ctx, bson.M{
 			"sync_locale": bson.M{"$exists": true},
 		}).
 		Decode(&d)
-	// tenant senza impostazioni:
-	// meglio il default che un errore
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return defaultLanguage, "", nil
 	}
@@ -855,16 +772,15 @@ func (r *Reader) Get(ctx context.Context,
 }
 ```
 
-=== I client verso i sistemi esterni <sez:clients>
+=== `clients` — Gli adattatori verso i sistemi esterni <sez:clients>
 
-Il package `clients` raccoglie gli adattatori verso i quattro sistemi con cui il servizio dialoga. Sono deliberatamente sottili: traducono le chiamate del servizio nelle API dei rispettivi sistemi, senza logica propria. Due di essi contengono però dettagli che vale la pena mostrare.
+Il package `clients` raccoglie gli adattatori verso i quattro sistemi con cui il servizio dialoga: Cube, il modello linguistico, MongoDB e AWS. Nessuno contiene logica di dominio, perché il loro compito è tradurre le chiamate del servizio nelle API dei rispettivi sistemi. Ciascuno però risolve un problema che il servizio non deve conoscere, e sono quattro problemi diversi.
 
-Il client di Cube è il punto in cui il servizio firma il token JWT che accompagna ogni interrogazione. Il token porta l'identificativo del tenant fra le proprie dichiarazioni e una scadenza breve; che cosa Cube ne faccia una volta ricevuto, e come da quel valore discenda la segregazione richiesta da RQA-OB\_04, è descritto nella @sez:semantic[Sezione].
+*Cube* pretende un token a ogni interrogazione. Il client lo firma con l'identificativo del tenant e una breve scadenza; che cosa Cube ne faccia una volta ricevuto si vede nella @sez:semantic[Sezione].
 
 ```go
 // internal/clients/cube/cube.go
 
-// firma un jwt hs256 con il tenant_id nei claim
 func (c *Client) token(tenantID string) (string, error) {
 	if tenantID == "" {
 		return "", fmt.Errorf("tenant_id is required")
@@ -873,7 +789,6 @@ func (c *Client) token(tenantID string) (string, error) {
 	claims := jwt.MapClaims{
 		"tenant_id": tenantID,
 		"iat":       now.Unix(),
-		// scadenza, per evitare che il token duri per sempre
 		"exp": now.Add(5 * time.Minute).Unix(),
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256,
@@ -881,38 +796,17 @@ func (c *Client) token(tenantID string) (string, error) {
 }
 ```
 
-Lo stesso client gestisce una particolarità del protocollo di Cube: quando un'interrogazione richiede un calcolo non ancora in cache, la risposta non è il risultato ma l'indicazione `Continue wait`, con cui Cube invita a ripresentare la richiesta. Il client la ripresenta a intervalli di un secondo, dentro un tempo massimo complessivo oltre il quale l'operazione fallisce invece di restare appesa.
+Lo stesso client si fa carico di una particolarità del protocollo. Quando un'interrogazione richiede un calcolo non ancora in cache, Cube non risponde con il risultato ma con l'indicazione `Continue wait`, che invita a ripresentare la richiesta. Il client la ripresenta a intervalli di un secondo, entro un tempo massimo complessivo oltre il quale rinuncia anziché restare appeso.
 
-Il client del modello linguistico costruisce la conversazione minima: un messaggio di sistema con le istruzioni e un messaggio utente con i dati. Non c'è uno storico da mantenere, perché ogni riepilogo è una chiamata indipendente. La temperatura, il parametro che governa la variabilità del testo generato, è impostata bassa: a parità di dati il testo deve restare il più possibile stabile e aderente ai valori forniti.
+*Il modello linguistico* si interroga con un'API pensata per le conversazioni: si invia un elenco di messaggi, ciascuno con un ruolo di riferimento. In questo caso il servizio ne utilizza soltanto due, uno di sistema con le istruzioni e uno utente con i dati, perché ogni riepilogo è una richiesta a sé e non esiste niente di precedente da ricordare. La temperatura è impostata a 0,2 perché a parità di dati il testo resti il più possibile stabile. Il codice è quello riportato nella @sez:pattern[Sezione].
 
-```go
-// internal/clients/openaiclient/openaiclient.go
+*MongoDB* viene contattato una volta sola all'avvio, con un ping che verifica la connessione appena aperta. Un database irraggiungibile si scopre così quando il servizio parte, e non alla prima richiesta che lo interroga.
 
-func (c *Client) Complete(ctx context.Context,
-	systemPrompt, userMessage string) (string, error) {
+*AWS* è il client che costruisce la sessione con cui i due consumatori parlano alle code. In produzione non c'è niente da indicare: l'SDK ricava l'indirizzo del servizio dalla regione e usa le credenziali della macchina su cui gira. In sviluppo le code sono invece quelle di ElasticMQ, un container in esecuzione sulla macchina locale, e la configurazione ne riporta l'indirizzo perché il client lo usi al posto di quello di Amazon. Servono comunque delle credenziali, dato che l'SDK si rifiuta di partire senza, e siccome ElasticMQ non le controlla il client ne passa due inventate. Il resto del servizio non si accorge della differenza: il codice è lo stesso, cambia una riga nel file di configurazione.
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+=== `main.go` — Il punto di ingresso e i consumatori
 
-	resp, err := c.api.Chat.Completions.New(ctx,
-		openai.ChatCompletionNewParams{
-			Model: openai.ChatModel(c.model),
-			// bassa = output più stabile e fedele ai dati
-			Temperature: openai.Float(0.2),
-			Messages: []openai.ChatCompletionMessageParamUnion{
-				openai.SystemMessage(systemPrompt),
-				openai.UserMessage(userMessage),
-			},
-		})
-	...
-}
-```
-
-Gli altri due client sono minimi. Quello di MongoDB apre la connessione e la verifica subito con un ping, così un database irraggiungibile viene scoperto all'avvio del servizio e non alla prima richiesta. Quello di AWS costruisce la sessione per SQS, con una particolarità utile allo sviluppo: se la configurazione indica un endpoint esplicito, la sessione punta a quell'indirizzo con credenziali fittizie, ed è ciò che permette di usare ElasticMQ in locale; altrimenti vale la catena di credenziali standard di AWS, quella che verrebbe usata in produzione. Il codice del servizio è identico nei due casi, cambia una riga di configurazione.
-
-=== Il punto di ingresso
-
-Il file `main.go` è l'unico punto del programma che conosce tutte le parti. Il suo compito è costruirle nell'ordine giusto e collegarle: è qui che i tipi concreti vengono assegnati alle interfacce viste nella @sez:summary[Sezione].
+Il `main.go` è l'unico punto del programma che conosce tutte le parti appena viste. Il suo compito è costruirle nell'ordine giusto e collegarle: è qui che i tipi concreti vengono assegnati alle interfacce viste nella @sez:summary[Sezione].
 
 ```go
 // cmd/context-service/main.go
@@ -920,9 +814,6 @@ Il file `main.go` è l'unico punto del programma che conosce tutte le parti. Il 
 func main() {
 	cfg, err := config.Load()
 	...
-	// il context si chiude quando arriva ctrl+c o un
-	// sigterm, così il consumer smette di leggere dalla
-	// coda e il servizio si spegne in modo pulito
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt, syscall.SIGTERM)
@@ -950,33 +841,27 @@ func main() {
 	producer.EnsureExec(cfg.SQSQueueURL, 10, 3,
 		newProduceProcessor(summaryService), ctx, &wg)
 
-	// coda separata per l'invalidazione: formato,
-	// volumi e costi diversi dalla produzione
 	invalidator := &sqsconsumer.SQSconsumer{}
 	invalidator.SetSession(sess)
 	invalidator.EnsureExec(cfg.SQSInvalidateQueueURL,
 		10, 3, newInvalidateProcessor(summaries),
 		ctx, &wg)
 
-	// il servizio ha due ingressi: le code per i
-	// comandi, l'http per le consultazioni
 	startHTTP(ctx, cfg.HTTPAddr, summaries, &wg, stop)
 
 	wg.Wait() // aspetta la fine di tutte le goroutine
 }
 ```
 
-Tre aspetti di questo file governano il comportamento dell'intero servizio.
+Tre aspetti di questo file stabiliscono il comportamento dell'intero servizio.
 
-Il primo è il contesto derivato dai segnali del sistema operativo. `signal.NotifyContext` produce un contesto che viene cancellato all'arrivo di una richiesta di arresto, e quel contesto viene passato a ogni ascoltatore: la cancellazione è il segnale unico con cui tutte le parti del servizio apprendono che è ora di fermarsi. È il meccanismo su cui si regge l'arresto controllato richiesto da RQA-OB\_05: i consumatori smettono di prelevare messaggi nuovi e completano quelli in corso, i messaggi non ancora presi in carico restano sulla coda e verranno elaborati alla ripartenza.
+Il primo è il contesto. `signal.NotifyContext` produce un contesto che viene cancellato all'arrivo di una richiesta di arresto, e quel contesto viene passato a ogni ascoltatore: la cancellazione è il segnale unico con cui tutte le parti del servizio apprendono che è ora di fermarsi. È il meccanismo su cui si regge l'arresto controllato richiesto da RQA-OB\_05: i consumatori smettono di prelevare messaggi nuovi e completano quelli in corso, i messaggi non ancora presi in carico restano sulla coda e non verranno elaborati.
 
 Il secondo è il `WaitGroup`, il contatore con cui il programma principale attende la terminazione di tutte le goroutine prima di uscire. Senza questa attesa, all'uscita del `main` le elaborazioni in corso verrebbero interrotte a metà, vanificando l'arresto controllato appena descritto.
 
 Il terzo è il consumo delle code, affidato alla libreria interna dell'azienda, uno dei vincoli del progetto (RV-OB\_03). La libreria si fa carico dell'intero dialogo con SQS: la ricezione tramite _long polling_ a blocchi di dieci messaggi, l'elaborazione in parallelo da parte di tre _worker_, la cancellazione dalla coda dei soli messaggi elaborati con successo e l'arresto alla cancellazione del contesto. Al servizio resta da fornire una sola cosa: la funzione che elabora il singolo messaggio.
 
-=== I consumatori delle code <sez:consumatori>
-
-Le funzioni di elaborazione dei due comandi seguono lo stesso schema: sono costruite da una _factory_ che riceve il componente da usare e restituisce la funzione da consegnare alla libreria di consumo. La chiusura cattura il componente, e la funzione risultante ha la firma che la libreria si aspetta.
+Le funzioni di elaborazione delle due code, la produzione di un riepilogo e l'invalidazione, seguono lo stesso schema: sono costruite da una _factory_ che riceve il componente da usare e restituisce la funzione da consegnare alla libreria di consumo.
 
 ```go
 // cmd/context-service/sqs_produce.go
@@ -1015,8 +900,6 @@ func newProduceProcessor(
 			context.Background(),
 			tenantID, body.GeocID, body.Trigger)
 		if err != nil {
-			// la libreria logga l'errore e il
-			// messaggio verrà ritentato
 			return err
 		}
 		...
@@ -1027,48 +910,21 @@ func newProduceProcessor(
 
 La validazione precede ogni elaborazione, come previsto dalla @sez:scelte[Sezione]: un messaggio privo dei dati necessari viene rifiutato prima che il flusso parta, senza spendere interrogazioni né chiamate al modello. L'errore restituito dalla funzione è anche il canale con cui si governa il destino del messaggio: se la funzione ritorna un errore la libreria non cancella il messaggio dalla coda, che torna disponibile per un nuovo tentativo.
 
-Il consumatore dell'invalidazione è ancora più breve, perché delega tutto alla cancellazione dell'archivio vista nella @sez:store[Sezione]. Va dichiarata un'approssimazione: il formato del messaggio qui letto è una versione essenziale definita per lo sviluppo, poiché l'iscrizione della coda al topic reale della piattaforma, con la struttura di incapsulamento che ne deriva, appartiene all'integrazione in produzione non realizzata (obiettivo D01).
+Il consumatore dell'invalidazione ha la stessa forma, con la sola differenza che dopo la validazione chiama la cancellazione del riepilogo a database invece che della produzione.
 
-```go
-// cmd/context-service/sqs_invalidate.go
+=== `http.go` — La consultazione <sez:http>
 
-func newInvalidateProcessor(
-	summaries *store.Store) sqsconsumer.SQSmessageProcessor {
-
-	return func(m *sqs.Message) error {
-		...
-		deleted, err := summaries.Delete(
-			context.Background(),
-			*attr.StringValue, body.GeocID)
-		if err != nil {
-			// il messaggio tornerà in coda e ci riproveremo
-			return err
-		}
-
-		fmt.Fprintf(os.Stderr,
-			"invalidated %s: %d summaries deleted\n",
-			body.GeocID, deleted)
-		return nil
-	}
-}
-```
-
-=== La consultazione <sez:http>
-
-L'ultimo ingresso del servizio è l'endpoint HTTP con cui la piattaforma consulta i riepiloghi. La sua caratteristica strutturale è ciò che non può fare: il gestore della richiesta riceve un'interfaccia che espone la sola lettura, quindi la consultazione non ha materialmente accesso né alla produzione né alla cancellazione. La garanzia discussa nella @sez:scelte[Sezione], per cui consultare non produce mai, non è una convenzione ma una proprietà del tipo.
+L'ultimo ingresso del servizio è l'endpoint HTTP con cui la piattaforma consulta i riepiloghi. La sua caratteristica strutturale è ciò che non può fare: il gestore della richiesta riceve un'interfaccia che espone la sola lettura, quindi la consultazione non ha accesso né alla produzione né alla cancellazione.
 
 ```go
 // cmd/context-service/http.go
 
-// quello che serve alla consultazione:
-// leggere l'archivio, niente altro
 type summaryReader interface {
 	Get(ctx context.Context, tenantID, geocID,
 		trigger string) (string, bool, error)
 }
 
 // GET /summary?tenant_id=...&geoc_id=...&trigger=...
-// la consultazione legge solo l'archivio
 func handleSummary(
 	summaries summaryReader) http.HandlerFunc {
 
@@ -1097,8 +953,6 @@ func handleSummary(
 			return
 		}
 		if !found {
-			// non è un errore: è la risposta che permette
-			// all'interfaccia di proporre la produzione
 			writeJSON(w, http.StatusOK,
 				summaryOut{Status: "not_found"})
 			return
@@ -1111,7 +965,7 @@ func handleSummary(
 
 La risposta per il riepilogo assente ha stato HTTP 200 e non 404, con l'esito espresso dal campo `status` del corpo: l'assenza è una risposta valida prevista dal caso d'uso UC1, non un errore di chi ha chiesto, ed è la risposta su cui la piattaforma costruisce la proposta di produzione all'operatore.
 
-L'arresto del server segue lo stesso segnale del resto del servizio, con un dettaglio che merita attenzione: il contesto del servizio, una volta cancellato, non può essere usato per governare la chiusura, perché è già scaduto. Lo spegnimento usa quindi un contesto nuovo con un proprio limite di tempo, entro il quale le richieste in corso vengono completate.
+L'arresto del server segue lo stesso segnale del resto del servizio, ma con un dettaglio che merita attenzione. Il contesto del servizio funziona qui da segnale di fermarsi: la goroutine resta in attesa sulla sua cancellazione, che arriva con la richiesta di arresto, ma il metodo `Shutdown` necessita di un contesto nuovo, che rappresenta il tempo massimo concesso alle richieste già in corso per terminare mentre il server smette di accettare nuove connessioni. Il contesto del servizio a questo punto è già cancellato, e passarlo a `Shutdown` lo farebbe rinunciare all'istante troncando le richieste a metà, cioè l'opposto dell'arresto controllato. Ne serve quindi uno nuovo, con dieci secondi propri, oltre i quali si chiude comunque perché un client fermo non trattenga il processo.
 
 ```go
 // cmd/context-service/http.go
@@ -1121,9 +975,6 @@ go func() {
 	defer wg.Done()
 	<-ctx.Done() // aspetta ctrl+c o sigterm
 
-	// context nuovo: quello del servizio è già
-	// cancellato, e a Shutdown serve tempo per
-	// finire le richieste in corso
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(), 10*time.Second)
 	defer cancel()
