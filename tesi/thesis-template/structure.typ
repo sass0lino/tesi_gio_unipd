@@ -8,12 +8,14 @@
 #include "preface/copyright.typ"
 
 #set page(numbering: "i")
-#include "preface/dedication.typ"
+// dedica tolta
 #include "preface/acknowledgements.typ"
 #include "preface/summary.typ"
 #include "preface/table-of-contents.typ"
 
 // Mainmatter
+// il salto precede il reset, altrimenti la pagina bianca si prende il numero 1
+#pagebreak(to: "odd")
 #counter(page).update(1)
 #set page(numbering: "1.")
 #include "chapters/1_introduction.typ"

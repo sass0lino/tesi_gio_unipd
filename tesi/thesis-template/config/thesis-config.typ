@@ -21,7 +21,7 @@
   codly(languages: codly-languages, zebra-fill: gray.lighten(90%))
 
   // LaTeX look https://typst.app/docs/guides/guide-for-latex-users#latex-look
-  set page(margin: 1.75in, numbering: myNumbering, number-align: center)
+  set page(margin: 3.8cm, numbering: myNumbering, number-align: center)
   set par(
     leading: 0.55em,
     spacing: 0.55em,
@@ -76,7 +76,7 @@
 // L'unica alternativa è al seguente link ma funziona solo se usi Glossarium con le ref ad esempio '@TERMINE' 
 // https://forum.typst.app/t/how-do-you-apply-a-style-to-glossarium-references-that-is-different-to-other-reference-types/2089?u=ogre
 #let glossary-style(body) = {
-  text(style: "italic", rgb(155, 0 , 20), body+sub[G])
+  text(style: "italic", body+sub[G])
 }
 
 #let gl(key,
@@ -112,6 +112,15 @@
     long: long, 
     update: update
   )
+)
+
+// rimando cliccabile a un obiettivo del piano di lavoro: l'ancora è nell'elenco del primo capitolo
+#let obj(code) = link(label("obj:" + code), code)
+
+// rimando cliccabile a un requisito: l'ancora sta nelle tabelle del capitolo di analisi
+#let req(code, display: none) = link(
+  label("req:" + code),
+  if display == none { code } else { display }
 )
 
 // Utile per quando si introducono le tecnologie (link+corsivo+footnote)

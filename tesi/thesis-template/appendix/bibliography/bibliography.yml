@@ -33,19 +33,9 @@ hybrid-search-rag:
 cube-extending:
   type: web
   title: Extending cubes
+  author: Cube Dev
   publisher: Cube Dev
   url: https://docs.cube.dev/docs/data-modeling/extending-cubes
-
-design-patterns:
-  type: book
-  title: "Design Patterns: Elements of Reusable Object-Oriented Software"
-  author:
-  - Gamma, Erich
-  - Helm, Richard
-  - Johnson, Ralph
-  - Vlissides, John
-  publisher: Addison-Wesley
-  date: 1994
 
 hexagonal-architecture:
   type: web
@@ -54,26 +44,74 @@ hexagonal-architecture:
   date: 2005
   url: https://alistair.cockburn.us/hexagonal-architecture/
 
-integration-patterns:
-  type: book
-  title: "Enterprise Integration Patterns: Designing, Building, and Deploying Messaging Solutions"
+llm-hallucination-survey:
+  type: article
+  title: "A Survey on Hallucination in Large Language Models: Principles, Taxonomy, Challenges, and Open Questions"
+  author:
+  - Huang, Lei
+  - Yu, Weijiang
+  - Ma, Weitao
+  - Zhong, Weihong
+  - Feng, Zhangyin
+  - Wang, Haotian
+  - Chen, Qianglong
+  - Peng, Weihua
+  - Feng, Xiaocheng
+  - Qin, Bing
+  - Liu, Ting
+  date: 2024
+  parent:
+    type: periodical
+    title: ACM Transactions on Information Systems
+  url: https://doi.org/10.1145/3703155
+
+sqs-standard-queues:
+  type: web
+  title: Amazon SQS standard queues
+  author: Amazon Web Services
+  publisher: Amazon Web Services
+  url: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues.html
+
+sns-fanout:
+  type: web
+  title: Fanout Amazon SNS notifications to Amazon SQS queues for asynchronous processing
+  author: Amazon Web Services
+  publisher: Amazon Web Services
+  url: https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html
+
+go-code-review-comments:
+  type: web
+  title: "Go Wiki: Go Code Review Comments"
+  author: The Go Authors
+  publisher: The Go Authors
+  url: https://go.dev/wiki/CodeReviewComments
+
+fowler-dependency-injection:
+  type: web
+  title: Inversion of Control Containers and the Dependency Injection pattern
+  author: Fowler, Martin
+  date: 2004
+  url: https://martinfowler.com/articles/injection.html
+
+fowler-repository:
+  type: web
+  title: Repository
+  author: Fowler, Martin
+  publisher: Catalog of Patterns of Enterprise Application Architecture
+  url: https://martinfowler.com/eaaCatalog/repository.html
+
+adapter-pattern:
+  type: web
+  title: Adapter
+  author: Refactoring.Guru
+  publisher: Refactoring.Guru
+  url: https://refactoring.guru/design-patterns/adapter
+
+publish-subscribe-channel:
+  type: web
+  title: Publish-Subscribe Channel
   author:
   - Hohpe, Gregor
   - Woolf, Bobby
-  publisher: Addison-Wesley
-  date: 2003
-
-'models-and-fair-use':
-  type: article
-  title: Foundation Models and Fair Use
-  author:
-  - Henderson, Peter
-  - Li, Xuechen
-  - Jurafsky, Dan
-  - Hashimoto, Tatsunori
-  - Lemley, Mark A.
-  - Liang, Percy
-  date: 2023
-  url: https://arxiv.org/abs/2303.15715
-  serial-number:
-    arxiv: '2303.15715'
+  publisher: Enterprise Integration Patterns
+  url: https://www.enterpriseintegrationpatterns.com/patterns/messaging/PublishSubscribeChannel.html

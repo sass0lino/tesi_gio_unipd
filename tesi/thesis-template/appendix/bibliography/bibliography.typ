@@ -1,5 +1,4 @@
-#pagebreak()
-// #pagebreak(to: "odd")
+#pagebreak(to: "odd")
 
 /*
 Typst supporta due tipi di file per la bibliografia: 

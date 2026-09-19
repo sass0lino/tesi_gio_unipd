@@ -9,7 +9,7 @@
 
 == Go
 
-Go è il linguaggio di programmazione utilizzato da Datasoil per lo sviluppo dei servizi backend, ed è il linguaggio in cui è stato scritto l'intero servizio oggetto dello stage. Nato in Google, Go privilegia la semplicità e la leggibilità del codice: offre una sintassi essenziale, una tipizzazione statica con tempi di compilazione rapidi, una libreria standard ricca e la compilazione in un singolo eseguibile, caratteristica che ne semplifica la distribuzione. Il linguaggio si distingue inoltre per il supporto nativo alla concorrenza, tramite le _goroutine_ (thread leggeri gestiti dal runtime) e i canali di comunicazione tra esse.
+Go è il linguaggio di programmazione utilizzato da Datasoil per lo sviluppo dei servizi backend, ed è il linguaggio in cui è stato scritto l'intero servizio oggetto dello stage. Nato in Google, Go privilegia la semplicità e la leggibilità del codice: offre una sintassi essenziale, una tipizzazione statica con tempi di compilazione rapidi, una libreria standard ricca e la compilazione in un singolo eseguibile, caratteristica che ne semplifica la distribuzione. Il linguaggio si distingue inoltre per il supporto nativo alla concorrenza, tramite le #glpl("goroutine") (thread leggeri gestiti dal runtime) e i canali di comunicazione tra esse.
 
 Non avendo esperienza pregressa con il linguaggio, una parte dello stage è stata dedicata al suo apprendimento.
 
@@ -17,7 +17,7 @@ Non avendo esperienza pregressa con il linguaggio, una parte dello stage è stat
 
 MongoDB è un database NoSQL orientato ai documenti: i dati sono memorizzati come documenti in formato BSON (una rappresentazione binaria di JSON) raggruppati in _collection_, senza uno schema rigido imposto a priori. È il database utilizzato da Datasoil per la persistenza dei dati, organizzati secondo il modello multi-tenant: un database logico per ciascun cliente.
 
-Nel servizio sviluppato MongoDB svolge tre ruoli: contiene la configurazione delle interrogazioni per il recupero dei KPI, che ogni tenant può così definire senza modifiche al codice; custodisce i riepiloghi prodotti; ed è la sorgente da cui vengono lette le impostazioni del tenant che ne condizionano il contenuto, ovvero la lingua e il fuso orario.
+Nel servizio sviluppato MongoDB svolge tre ruoli: contiene la configurazione delle interrogazioni per il recupero dei KPI, che ogni #gl("tenant") può così definire senza modifiche al codice; custodisce i riepiloghi prodotti; ed è la sorgente da cui vengono lette le impostazioni del tenant che ne condizionano il contenuto, ovvero la lingua e il fuso orario.
 
 == Cube
 
@@ -39,11 +39,11 @@ L'interazione avviene tramite le API di OpenAI, utilizzando l'SDK ufficiale per 
 
 == Amazon SQS, SNS ed ElasticMQ
 
-Amazon Simple Queue Service (SQS) è il servizio di code gestite di AWS, utilizzato in Datasoil per la comunicazione asincrona tra le componenti della piattaforma. Una coda disaccoppia chi produce messaggi da chi li consuma: il produttore pubblica e prosegue, il consumatore elabora al proprio ritmo, e un messaggio la cui elaborazione fallisce torna disponibile per un nuovo tentativo.
+Amazon Simple Queue Service (#gl("sqs")) è il servizio di code gestite di AWS, utilizzato in Datasoil per la comunicazione asincrona tra le componenti della piattaforma. Una coda disaccoppia chi produce messaggi da chi li consuma: il produttore pubblica e prosegue, il consumatore elabora al proprio ritmo, e un messaggio la cui elaborazione fallisce torna disponibile per un nuovo tentativo.
 
-Amazon Simple Notification Service (SNS) è il servizio di distribuzione di messaggi per argomenti dello stesso fornitore, e supplisce a un limite delle code: SQS consegna ciascun messaggio a un solo consumatore, quindi due servizi non possono ricevere lo stesso evento. Un messaggio pubblicato su un _topic_ SNS viene invece recapitato in copia a tutti i sottoscrittori, tra i quali possono figurare altrettante code SQS. È il meccanismo che consente al servizio di ricevere gli eventi con cui la piattaforma segnala la modifica di un'entità, che hanno già altri destinatari, senza sottrarli a questi ultimi.
+Amazon Simple Notification Service (#gl("sns")) è il servizio di distribuzione di messaggi per argomenti dello stesso fornitore, e supplisce a un limite delle code: SQS consegna ciascun messaggio a un solo consumatore, quindi due servizi non possono ricevere lo stesso evento. Un messaggio pubblicato su un _topic_ SNS viene invece recapitato in copia a tutti i sottoscrittori, tra i quali possono figurare altrettante code SQS. È il meccanismo che consente al servizio di ricevere gli eventi con cui la piattaforma segnala la modifica di un'entità, che hanno già altri destinatari, senza sottrarli a questi ultimi.
 
-Il servizio sviluppato consuma due code distinte, una per ciascun comando che può ricevere: la richiesta di produzione di un riepilogo e la segnalazione che un'entità è stata modificata. Per il consumo si appoggia a un package sviluppato internamente dall'azienda, che si fa carico dell'intero dialogo con SQS: la ricezione dei messaggi tramite _long polling_, la loro elaborazione in parallelo da parte di un numero configurabile di _worker_, la cancellazione dalla coda dei soli messaggi elaborati con successo, così che quelli falliti vengano automaticamente riproposti, e l'arresto controllato del consumatore. Al package viene fornita unicamente la funzione di elaborazione del singolo messaggio, nella quale risiede la logica specifica del servizio.
+Il servizio sviluppato consuma due code distinte, una per ciascun comando che può ricevere: la richiesta di produzione di un riepilogo e la segnalazione che un'entità è stata modificata. Per il consumo si appoggia a un package sviluppato internamente dall'azienda, che si fa carico dell'intero dialogo con SQS: la ricezione dei messaggi tramite #gl("long-polling"), la loro elaborazione in parallelo da parte di un numero configurabile di _worker_, la cancellazione dalla coda dei soli messaggi elaborati con successo, così che quelli falliti vengano automaticamente riproposti, e l'arresto controllato del consumatore. Al package viene fornita unicamente la funzione di elaborazione del singolo messaggio, nella quale risiede la logica specifica del servizio.
 
 Per lo sviluppo e i test in locale è stato utilizzato ElasticMQ, un server che espone un'API compatibile con SQS: il codice del servizio rimane identico a quello di produzione, cambia soltanto l'indirizzo della coda nella configurazione.
 
@@ -57,7 +57,7 @@ Docker è impiegato anche dai test automatici, che se ne servono per avviare ist
 
 I test automatici del servizio sono scritti con il package `testing` della libreria standard di Go, senza librerie di asserzione esterne. È l'uso prevalente nell'ecosistema del linguaggio: la libreria standard si occupa dell'esecuzione, del confronto dei risultati e della misura della copertura, e un framework aggiuntivo introdurrebbe una dipendenza senza coprire un'esigenza rimasta scoperta.
 
-A essa si affiancano due strumenti per i casi in cui il codice da verificare dialoga con l'esterno. Il package `net/http/httptest`, anch'esso nella libreria standard, esegue una richiesta HTTP direttamente sul gestore e ne raccoglie la risposta, senza bisogno di avviare un server né di occupare una porta di rete. La libreria `testcontainers` permette invece a un test di avviare un servizio reale dentro un container, utilizzarlo e distruggerlo al termine: nel progetto se ne serve per eseguire le interrogazioni su un'istanza vera di MongoDB, anziché su una sua imitazione che verificherebbe soltanto le chiamate e non il loro esito.
+A essa si affiancano due strumenti per i casi in cui il codice da verificare dialoga con l'esterno. Il package `net/http/httptest`, anch'esso nella libreria standard, esegue una richiesta HTTP direttamente sul gestore e ne raccoglie la risposta, senza bisogno di avviare un server né di occupare una porta di rete. La libreria #gl("testcontainers") permette invece a un test di avviare un servizio reale dentro un container, utilizzarlo e distruggerlo al termine: nel progetto se ne serve per eseguire le interrogazioni su un'istanza vera di MongoDB, anziché su una sua imitazione che verificherebbe soltanto le chiamate e non il loro esito.
 
 == Librerie di supporto
 
